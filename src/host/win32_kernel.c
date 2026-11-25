@@ -158,7 +158,11 @@ typedef struct Thread {
     uint32_t id, proc, param, code, handle;
     int done, terminate;
 } Thread;
+#ifdef ROADKILL_NO_TLS
+#define self (*(Thread**)os_tls(2))
+#else
 static __thread Thread* self;
+#endif
 static uint32_t next_tid = 2;
 static pthread_cond_t changed = PTHREAD_COND_INITIALIZER;   /* a thread ended, an event / mutex changed */
 
@@ -608,7 +612,11 @@ static uint32_t k_GetProcAddress(const uint32_t* a, int n)
 }
 
 /* TLS: per thread slots */
+#ifdef ROADKILL_NO_TLS
+#define tls ((uint32_t*)os_tls(3))
+#else
 static __thread uint32_t tls[64];
+#endif
 static uint32_t tls_used;
 static uint32_t k_TlsAlloc(const uint32_t* a, int n)
 {

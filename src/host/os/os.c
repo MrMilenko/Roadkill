@@ -14,6 +14,7 @@
 
 void* os_reserve(size_t n) { return VirtualAlloc(NULL, n, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE); }
 void os_release(void* p, size_t n) { (void)n; VirtualFree(p, 0, MEM_RELEASE); }
+int os_commit(void* p, size_t n) { (void)p; (void)n; return 0; }
 
 char* os_stack_top(void)
 {
@@ -35,6 +36,7 @@ void* os_reserve(size_t n)
     return p == MAP_FAILED ? NULL : p;
 }
 void os_release(void* p, size_t n) { munmap(p, n); }
+int os_commit(void* p, size_t n) { (void)p; (void)n; return 0; }
 
 char* os_stack_top(void)
 {

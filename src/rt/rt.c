@@ -15,7 +15,24 @@ static uint32_t heap_top = RT_HEAP_BASE;
  * the top 8 MB; each game thread (rt_thread_begin) a further 512 KB slice. */
 #define RT_MAIN_FRAMES   0x00800000u
 #define RT_THREAD_FRAMES 0x00080000u
-static __thread uint32_t stack_top, stack_lo;
+#ifdef ROADKILL_NO_TLS
+typedef struct { uint32_t top, lo, committed; } RtFrames;
+#define RT_FR ((RtFrames*)os_tls(0))
+#define stack_top (RT_FR->top)
+#define stack_lo (RT_FR->lo)
+#define frames_committed (RT_FR->committed)
+#else
+static __thread uint32_t stack_top, stack_lo, frames_committed;
+#endif
+/* commits this thread's frames down to stack_top (os_commit: only the Xbox needs it) */
+static void frames_commit(void)
+{
+    if (stack_top >= frames_committed) return;
+    uint32_t lo = stack_top & ~0xffffu;
+    if (lo < stack_lo) lo = stack_lo;
+    if (os_commit(rt_ptr(lo), frames_committed - lo) != 0) rt_stop("frames: out of memory", frames_committed - lo);
+    frames_committed = lo;
+}
 static uint32_t next_slice = RT_FAKE_BASE - RT_MAIN_FRAMES;   /* guarded by slice_lock */
 #include <pthread.h>
 static pthread_mutex_t slice_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -24,6 +41,7 @@ static void frames_init_main(void)
 {
     stack_top = RT_FAKE_BASE;
     stack_lo = RT_FAKE_BASE - RT_MAIN_FRAMES;
+    frames_committed = RT_FAKE_BASE;
 }
 
 void rt_thread_begin(void)
@@ -35,6 +53,7 @@ void rt_thread_begin(void)
     pthread_mutex_unlock(&slice_lock);
     stack_top = top;
     stack_lo = top - RT_THREAD_FRAMES;
+    frames_committed = top;
 }
 static uint32_t fake_top = RT_FAKE_BASE;
 static struct { uint32_t slot; char name[64]; } imports[256];
@@ -49,6 +68,9 @@ int rt_init(const char* exe_path)
 {
     rt_base = os_reserve(RT_SIZE);
     if (!rt_base) return -1;
+    /* the low 64 KB (the original's null pointer reads land there) and the fake area */
+    os_commit(rt_base, 0x10000);
+    os_commit(rt_base + RT_FAKE_BASE, RT_SIZE - RT_FAKE_BASE);
     FILE* f = fopen(exe_path, "rb");
     if (!f) { fprintf(stderr, "tm2: cannot open %s\n", exe_path); return -1; }
     fseek(f, 0, SEEK_END);
@@ -62,6 +84,7 @@ int rt_init(const char* exe_path)
     if (pe + 0xf8 > (uint32_t)size || memcmp(d + pe, "PE\0\0", 4)) { free(d); return -1; }
     uint32_t nsec = rd16(d + pe + 6), opt = rd16(d + pe + 20), base = rd32(d + pe + 52);
     if (base != 0x00400000u) { fprintf(stderr, "tm2: %s is not the TM2.EXE this port reads\n", exe_path); free(d); return -1; }
+    os_commit(rt_base + base, 0x1000);
     memcpy(rt_base + base, d, 0x1000);   /* the headers, as the loader maps them */
     for (uint32_t i = 0; i < nsec; i++) {
         const uint8_t* s = d + pe + 24 + opt + 40 * i;
@@ -69,6 +92,7 @@ int rt_init(const char* exe_path)
         uint32_t vs = rd32(s + 8), va = rd32(s + 12), rs = rd32(s + 16), rp = rd32(s + 20);
         uint32_t n = vs > rs ? vs : rs;
         if (base + va + n > RT_HEAP_BASE) { free(d); return -1; }
+        if (os_commit(rt_base + base + va, n) != 0) { free(d); return -1; }
         if (rp == 0) continue;   /* .bss: no file data, the mapping is already zero */
         if (rp + rs > (uint32_t)size) { free(d); return -1; }
         memcpy(rt_base + base + va, d + rp, rs);
@@ -139,6 +163,7 @@ uint32_t rt_frame_push(uint32_t n)
     if (!stack_top) frames_init_main();
     if (stack_top - n < stack_lo) rt_stop("frame stack full", n);
     stack_top -= n;
+    frames_commit();
     memset(rt_ptr(stack_top), 0, n);
     return stack_top;
 }
@@ -150,6 +175,7 @@ uint32_t rt_heap_grow(uint32_t n)
     n = (n + 15u) & ~15u;
     if (heap_top + n > RT_HEAP_END) return 0;
     uint32_t a = heap_top;
+    if (os_commit(rt_ptr(a), n) != 0) return 0;
     heap_top += n;
     memset(rt_ptr(a), 0, n);
     return a;
@@ -240,8 +266,15 @@ void rt_list_binds(FILE* f)
 const char* rt_name(uint32_t addr) { const Bind* b = find(addr); return b ? b->name : NULL; }
 
 #define CHAIN 64
+#ifdef ROADKILL_NO_TLS
+typedef struct { uint32_t chain[CHAIN]; int depth; } RtChain;
+#define RT_CH ((RtChain*)os_tls(1))
+#define chain (RT_CH->chain)
+#define depth (RT_CH->depth)
+#else
 static __thread uint32_t chain[CHAIN];
 static __thread int depth;
+#endif
 static int trace = -1;
 
 void rt_stop(const char* why, uint32_t addr)

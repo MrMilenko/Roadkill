@@ -91,6 +91,13 @@ static void push(SDL_Scancode sc, int down)
     if (settings_bool("debug.keys_log", 0)) fprintf(stderr, "tm2 host: key %s %s\n", SDL_GetScancodeName(sc), down ? "down" : "up");
 }
 
+/* a key held by something other than the keyboard (the Xbox's pad in the menus: port/xbox) */
+void win32_keys_virtual(int sc, int down)
+{
+    if (sc <= 0 || sc >= SDL_NUM_SCANCODES || scripted[sc] == (uint8_t)!!down) return;
+    push((SDL_Scancode)sc, !!down);
+}
+
 /* the schedule's clock: presented frames, and while nothing is presented (a menu waiting for
  * input redraws nothing) 60 a second on from the last present */
 static int last_frame;
@@ -131,9 +138,15 @@ void win32_keys_frame(int frame)
 }
 
 /* called from PeekMessageA: presses and releases come due by the time clock too */
+#ifdef ROADKILL_XBOX
+void xbox_pad_keys(void);
+#endif
 void win32_keys_tick(void)
 {
     parse();
+#ifdef ROADKILL_XBOX
+    xbox_pad_keys();
+#endif
     int f = vframe();
     if (npress) schedule(f);
     shot(f);   /* a screen that waits redraws nothing: its last frame, numbered by the clock */

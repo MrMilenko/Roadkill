@@ -140,7 +140,9 @@ static void make_dirs(const char* path)
 
 static void find_dir(void)
 {
-#if defined(_WIN32)
+#if defined(ROADKILL_XBOX)
+    snprintf(dir, sizeof dir, "D:");   /* beside the XBE */
+#elif defined(_WIN32)
     const char* a = getenv("APPDATA");
     snprintf(dir, sizeof dir, "%s\\Roadkill", a && *a ? a : ".");
 #elif defined(__APPLE__)

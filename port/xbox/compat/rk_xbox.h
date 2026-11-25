@@ -1,0 +1,40 @@
+/*
+ * rk_xbox.h: included first in every Roadkill file of the Xbox build (port/xbox/Makefile). The
+ * XDK's C library is Visual C++ 2003's: the C99 / POSIX names Roadkill uses are mapped here onto
+ * it or onto port/xbox/xbox_posix.c. Nothing of the XDK's own headers (xtl.h) comes in, so the
+ * game's names stay clear of Win32's macros.
+ */
+#ifndef RK_XBOX_H
+#define RK_XBOX_H
+
+#include <stddef.h>
+#include <stdarg.h>
+
+#define strcasecmp  _stricmp
+#define strncasecmp _strnicmp
+int _stricmp(const char*, const char*);
+int _strnicmp(const char*, const char*, size_t);
+
+/* C99's snprintf / vsnprintf (the CRT has only _snprintf, which neither terminates nor counts) */
+int rk_snprintf(char* s, size_t n, const char* fmt, ...);
+int rk_vsnprintf(char* s, size_t n, const char* fmt, va_list ap);
+#define snprintf  rk_snprintf
+#define vsnprintf rk_vsnprintf
+
+/* the environment: the console has none; xbox_posix.c keeps one (settings, TM2_* variables) */
+char* rk_getenv(const char* name);
+int rk_setenv(const char* name, const char* value, int overwrite);
+#define getenv rk_getenv
+#define setenv rk_setenv
+
+/* files: XAPI wants '\' and full paths ("D:\..."); these turn '/' into '\' first */
+#include <stdio.h>
+FILE* rk_fopen(const char* path, const char* mode);
+#define fopen rk_fopen
+
+/* the log (D:\roadkill.log, also stderr's file) and a stop with a message on the screen */
+void rk_log(const char* fmt, ...);
+void rk_fatal(const char* fmt, ...);
+void rk_tls_release(void);
+
+#endif

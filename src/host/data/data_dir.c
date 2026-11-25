@@ -38,9 +38,13 @@ static void resolve(void)
 {
     if (resolved) return;
     resolved = 1;
+#ifdef ROADKILL_XBOX
+    snprintf(beside, sizeof beside, "D:\\data");   /* D: is the XBE's folder */
+#else
     char* base = SDL_GetBasePath();   /* the executable's folder, with a trailing separator */
     snprintf(beside, sizeof beside, "%sdata", base ? base : "");
     SDL_free(base);
+#endif
 #ifdef _WIN32
     snprintf(peruser, sizeof peruser, "%s\\data", settings_dir());
 #else
