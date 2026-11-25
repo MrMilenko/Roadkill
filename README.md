@@ -55,6 +55,12 @@ the details.
 runtime replaced by small host services on SDL (`src/host`). Roadkill's plan is to clean that up
 area by area into plain C, keeping the game playable and checked against the decomp at each step.
 
+## License
+
+Roadkill's code is licensed under the GNU General Public License, version 3 or (at your option)
+any later version: see `LICENSE`. It does not cover Twisted Metal 2 itself or anything read from
+your copy of the game.
+
 ## Credits
 
 The decompilation and this port: Milenko. Tokatta007's PlayStation decompilation
