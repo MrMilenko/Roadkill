@@ -1,6 +1,9 @@
 # Roadkill
 
-Twisted Metal 2 for Windows 95 (1997), native on modern machines. Roadkill is built from the
+**Twisted Metal 2, in portable code. Updated for modern PCs and ports.**
+
+Roadkill has one purpose: the 1997 PC game, Twisted Metal 2 for Windows 95, native on modern
+machines. Roadkill is built from the
 [TM2-Win9x Decomp](https://github.com/MrMilenko/TM2-Win9x-Decomp): the original `TM2.EXE`
 decompiled into C, every function the game reaches checked against the original machine code.
 
@@ -74,5 +77,5 @@ your copy of the game.
 
 The decompilation and this port: Milenko. Tokatta007's PlayStation decompilation
 ([TM2-Decomp](https://github.com/Tokatta007/TM2-Decomp)) was the map for names and intent while
-verifying the PC code; for the PlayStation version on PC, see Tokatta007's
+verifying the PC code; for the PlayStation version on PC, with online play and much more, see Tokatta007's
 [OpenTM2](https://github.com/Tokatta007/OpenTM2). Twisted Metal 2 is © its owners.
