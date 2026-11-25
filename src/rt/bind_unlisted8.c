@@ -1,0 +1,21 @@
+/*
+ * bind_unlisted8.c: unlisted 0x0046ac4c (scene select item, a vtable slot), ported in
+ * src/platform/pf8_scenesel.c; the four registers (compact: a Watcom method with register arguments).
+ */
+#include "rt_env.h"
+#include "platform/pf8_scenesel.h"
+
+static uint32_t b_scene_select(const uint32_t* a, int n)
+{
+    Pf2Env e = rt_pf2env();
+    uint32_t r = pf8_0046ac4c(&e, rt_arg(a, n, 0), rt_arg(a, n, 1), rt_arg(a, n, 2), rt_arg(a, n, 3));
+    rt_en2env_done();
+    return r;
+}
+
+void rt_bind_unlisted8(void)
+{
+    rt_bind(0x0046ac4cu, b_scene_select, "unlisted_scene_select");
+}
+
+RT_BIND_AREA(unlisted8)

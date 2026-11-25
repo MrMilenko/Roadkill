@@ -1,0 +1,6 @@
+/build/
+/build-*/
+/disc/
+.DS_Store
+*.bmp
+shots/
