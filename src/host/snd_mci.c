@@ -11,8 +11,7 @@
  * MCI_FROM track N to track N + 1 (MCI_TO only when N + 1 <= the number of tracks, else to the
  * end of the disc); pause / resume are MCI_PAUSE and MCI_PLAY with no MCI_FROM; the monitor
  * thread asks MCI_STATUS mode every 3 s and starts the track again when it reads "stopped"
- * (under this host that thread only runs when the main thread blocks, so far never: a track then
- * plays once; docs/RUNTIME.md "Known gaps").
+ * ([gameplay] loop_music: cd_audio.c starts it over at once instead).
  *
  *   MCI_OPEN 0x803: type "cdaudio" or id 516 (MCI_DEVTYPE_CD_AUDIO); any element (drive) is
  *     accepted. The device id is 1; opening again (shareable) gives the same id. Without an

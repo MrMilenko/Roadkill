@@ -40,6 +40,7 @@
  * left stick up from the first read. TM2_PAD_LOG=1 logs the script and every 500th read.
  */
 #include "input_joy.h"
+#include "host/settings/settings.h"
 
 #include <SDL.h>
 #include <stdio.h>
@@ -78,8 +79,8 @@ static const struct { const char* name; int kind, idx; } PAD_CTL[] = {
 
 static void pad_parse(void)
 {
-    const char* s = getenv("TM2_PAD");
-    pad_log = getenv("TM2_PAD_LOG") != NULL;
+    const char* s = settings_str("debug.pad", NULL);
+    pad_log = settings_bool("debug.pad_log", 0);
     while (s && *s && nsteps < 64) {
         char item[64];
         size_t l = strcspn(s, ",");
@@ -207,16 +208,14 @@ static void init(void)
 {
     if (njoy >= 0) return;
     njoy = 0;
-    const char* no = getenv("TM2_NOJOY");
-    if (no && *no == '1') return;
+    if (!settings_bool("input.controller", 1)) return;   /* roadkill.ini [input], TM2_NOJOY=1 */
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "tm2 host: no joysticks (SDL: %s)\n", SDL_GetError());
         return;
     }
     int vdi = -1;
-    const char* vp = getenv("TM2_VIRTUAL_PAD");
-    if (vp && *vp == '1') {
+    if (settings_bool("debug.virtual_pad", 0)) {
 #if SDL_VERSION_ATLEAST(2, 0, 14)
         vdi = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 6, 15, 1);
         if (vdi < 0) fprintf(stderr, "tm2 host: TM2_VIRTUAL_PAD: %s\n", SDL_GetError());

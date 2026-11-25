@@ -54,8 +54,11 @@ static uint32_t b_field4_addr(const uint32_t* a, int n) { return en_wg_field4_ad
 static uint32_t b_entry(const uint32_t* a, int n) { return en_wg_entry(&W, A(0), (int32_t)A(1)); }
 /* 0x004a2e43 (EAX node) */
 static uint32_t b_list_push(const uint32_t* a, int n) { en_wg_list_push(&W, A(0)); return 0; }
-static uint32_t b_reset_a(const uint32_t* a, int n) { en_wg_reset_a(&W, A(0)); return 0; }      /* 0x004a2e60 */
-static uint32_t b_reset_b(const uint32_t* a, int n) { en_wg_reset_b(&W, A(0)); return 0; }      /* 0x004a3620 */
+/* 0x004a2e60 / 0x004a3620 leave EAX = the object, and their callers use it (the static init
+ * 0x00477640 writes the derived vtable to [eax + 0x30]): answering 0 left the background
+ * widgets with the base vtable, a pure virtual call on the network / audio / input screens */
+static uint32_t b_reset_a(const uint32_t* a, int n) { en_wg_reset_a(&W, A(0)); return A(0); }   /* 0x004a2e60 */
+static uint32_t b_reset_b(const uint32_t* a, int n) { en_wg_reset_b(&W, A(0)); return A(0); }   /* 0x004a3620 */
 static uint32_t b_clear_2a4(const uint32_t* a, int n) { en_wg_clear_2a4(&W, A(0)); return 0; }  /* 0x004a3d88 */
 static uint32_t b_zero(const uint32_t* a, int n) { (void)a; (void)n; return en_wg_zero(); }     /* 0x004a2ff0 */
 G1(b_word0, en_wg_word0)                    /* 0x004a2ff4, 0x004a6dcc */

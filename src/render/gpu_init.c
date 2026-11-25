@@ -136,9 +136,9 @@ void gpu_init(TM2Gpu* g, int mmx, int (*rand_fn)(void* user), void* rand_user) {
 }
 
 void gpu_set_pitch(TM2Gpu* g, int32_t pitch) {
-    /* tiles (2..81, 2..61): 80 x 60 tiles = 640 x 480 pixels */
-    for (int row = 0; row < 60; row++)
-        for (int col = 0; col < 80; col++)
+    /* tiles (2..81, 2..61): 80 x 60 tiles = 640 x 480 pixels (GPU_HI: the grid less 4) */
+    for (int row = 0; row < GPU_ROWS - 4; row++)
+        for (int col = 0; col < GPU_COLS - 4; col++)
             g->tile[(row + 2) * GPU_COLS + col + 2].screen = (int32_t)((uint32_t)row * (uint32_t)pitch * 8u + (uint32_t)col * 16u);
     int32_t half = pitch / 2;
     g->r.pitch_px = half;
@@ -189,7 +189,7 @@ void gpu_viewport_setup(TM2Gpu* g, int i, int32_t w, int32_t h, int32_t x0, int3
     s->col1 = (sw >> 8) + 2;
     s->x1 = w;
     s->y1 = h;
-    s->tile0 = 0xaa;
+    s->tile0 = 2 * GPU_COLS + 2;   /* 0xaa: tile (2, 2) */
     s->ncols = s->col1 - 2 + 1;
     s->width = w;
     s->height = h;
@@ -229,11 +229,16 @@ void gpu_frame_clear(TM2Gpu* g) {
     else if (hm <= 4) { rlo = hm == 4 ? 0xffffffffu : (1u << (8 * hm)) - 1u; rhi = 0; }
     else { rlo = 0xffffffffu; rhi = (1u << (8 * (hm - 4))) - 1u; }
     int32_t t = s->tile0;
-    uint8_t nrows = (uint8_t)((uint8_t)s->row1 - (uint8_t)s->row0 + 1);
-    uint8_t ncols = (uint8_t)s->ncols;
-    for (uint8_t r = 0; r < nrows; r++) {
+#ifndef GPU_HI
+    typedef uint8_t count_t;    /* the original's byte counters */
+#else
+    typedef int32_t count_t;    /* GPU_HI: more than 255 tile columns */
+#endif
+    count_t nrows = (count_t)((count_t)s->row1 - (count_t)s->row0 + 1);
+    count_t ncols = (count_t)s->ncols;
+    for (count_t r = 0; r < nrows; r++) {
         GpuTile* p = &g->tile[t];
-        for (uint8_t c = 0; c < ncols; c++, p++) {
+        for (count_t c = 0; c < ncols; c++, p++) {
             p->open[1] = 0xffffffffu;
             p->f28 = 0;
             p->f2c = 0;
@@ -247,7 +252,7 @@ void gpu_frame_clear(TM2Gpu* g) {
     }
     if (hm != 0) {
         GpuTile* p = &g->tile[t - GPU_COLS];
-        for (uint8_t c = 0; c < ncols; c++, p++) {
+        for (count_t c = 0; c < ncols; c++, p++) {
             p->open[1] &= rhi;
             p->open[0] &= rlo;
         }

@@ -4,6 +4,7 @@
  */
 #include "en9_texload.h"
 #include "en5_float.h"
+#include "host/qol/qol.h"
 
 #define PAGES 0x00a30c48u
 #define RECS  0x00a36c58u
@@ -58,9 +59,15 @@ uint32_t en9_textures_load(En2Env* e)
     do {
         for (uint32_t k = 0; k < 0x3000; k += 0x18)
             if (en2_r32(e, HWTEX + k) != 0) en2_call1(e, 0x004c101cu, HWTEX + k);
+        int32_t idle = 0;   /* QoL fix_crashes: records visited since the total last changed */
         while (total > budget) {   /* double the scales round robin until it fits */
             uint32_t r = RECS + 0x18 * rr, p = PAGES + 0x30 * en2_r32(e, r);
+            /* QoL fix_crashes (not the original): ORIGINAL BUG, this loop never ends once nothing
+             * can shrink any more (fixed size pages over the budget, or the negative budget left
+             * by the pass after an out of memory one); stop after a whole round without change */
+            if (qol_fix_crashes() && ++idle > 0x200) { qol_fixed("textures_load 0x00497390: endless scaling loop"); break; }
             if (en2_r32(e, p) != 0 && en2_r32(e, p + 0x28) == 0) {
+                int32_t before = total;
                 double k2 = (double)rf(e, 0x004e2f52u);
                 double a = (double)rf(e, r + 0xc) * k2, b = k2 * (double)rf(e, r + 0x10);
                 wf(e, r + 0xc, (float)a);
@@ -69,6 +76,7 @@ uint32_t en9_textures_load(En2Env* e)
                 uint32_t s = scaled(e, r);
                 total += (int32_t)s;
                 en2_w32(e, r + 8, s);
+                if (total != before) idle = 0;
             }
             if (++rr >= 0x200) rr = 0;
         }
@@ -76,6 +84,10 @@ uint32_t en9_textures_load(En2Env* e)
         int32_t cx = (int32_t)en2_call0(e, 0x004958d8u) / 2;
         int32_t cy = (int32_t)en2_call0(e, 0x004958e4u) / 2;
         float grey = 0.0f;
+        /* QoL fix_crashes (not the original): ORIGINAL BUG, the creation result is kept from the
+         * last pass, so a pass after an out of memory one stops at its first record without a
+         * page (and leaves a negative budget); start each pass with a clean result */
+        if (qol_fix_crashes() && oom(res)) { qol_fixed("textures_load 0x00497390: stale out of memory result"); res = 0; }
         int32_t th = (int32_t)en2_call2(e, 0x004b3a90u, FONT, WAIT_TEXT);
         int32_t y0 = cy - 2 * th, y1 = cy - th, y2 = cy + th;
         for (uint32_t k = 0; k < 0x3000; k += 0x18) {

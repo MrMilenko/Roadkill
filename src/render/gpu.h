@@ -23,8 +23,14 @@
 
 #include "../formats/tpc.h"
 
+/* The original's grid. A build of the renderer with GPU_HI defined (src/engine/render/gpu_hi.h: Roadkill's display
+ * switches, not the original) gives its own larger grid and keeps everything else. */
+#ifndef GPU_COLS
 #define GPU_COLS 0x54
+#endif
+#ifndef GPU_ROWS
 #define GPU_ROWS 0x40
+#endif
 #define GPU_TILES (GPU_COLS * GPU_ROWS)
 #define GPU_EDGES 9                 /* slots -1..7 (0x00be5f10..0x00be6150) */
 #define GPU_MASKS 0x8000            /* edge mask table entries */
@@ -83,7 +89,7 @@ typedef struct {
         int32_t hi;             /* +0x44 + 0x10 * row: row * 0x54 + col1 + 1 */
         int32_t lo;             /* +0x48: row * 0x54 + col0 - 1 */
         int32_t pad[2];
-    } rows[0x41];               /* the 0x41st is never written */
+    } rows[GPU_ROWS + 1];       /* the 0x41st is never written */
     uint8_t enable[GPU_TILES];  /* +0x454 1 for tiles inside the rectangle */
     uint8_t pad[4];
 } GpuViewport;
@@ -163,6 +169,9 @@ typedef struct {
      * 0x00c85c68. NULL = not set up: code 0xa0 then draws nothing (gpu_dispatch returns -1). */
     struct Gpu3d* g3d;
     const void* lights;             /* const Gpu3dLights* */
+#ifdef GPU_HI
+    int32_t hi_scale;               /* GPU_HI only: pixels per game pixel (0x74 sprites step 1 / scale) */
+#endif
 } TM2Gpu;
 
 #define GPU_EDGE(g, i) (&(g)->edge[(i) + 1])

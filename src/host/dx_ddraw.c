@@ -32,6 +32,8 @@
 #include "dx_mem.h"
 #include "dx_sdl.h"
 #include "platform/pf2_env.h"
+#include "qol/display.h"
+#include "host/settings/settings.h"
 
 #define DDERR_ALREADYINITIALIZED 0x88760005u
 #define DDERR_NOCLIPPERATTACHED  0x887600cdu
@@ -80,6 +82,7 @@ typedef struct Surf {
     DxObj* chain_front;          /* a back buffer's primary */
     DxObj* clipper;
     uint32_t hdc;                /* fake HDC from GetDC, 0 until asked */
+    uint8_t* dc_copy;            /* display.internal_scale: the pixels at GetDC (host/qol/display.h) */
     int has_ck;
     uint32_t ck_lo, ck_hi;
     uint32_t palette;
@@ -213,6 +216,12 @@ static void present(Surf* p, Rc dirty)
         if (c.y + c.h > p->ext_h) p->ext_h = c.y + c.h;
         if (p->ext_w > 0 && p->ext_h > 0) { w = p->ext_w; h = p->ext_h; }
     }
+    if (qol_display_scale() > 1) {
+        /* display.internal_scale: the renderer's large picture over this one */
+        int ow, oh, op;
+        const uint16_t* big = qol_gpu_compose(rt_ptr(p->px), w, h, p->pitch, &ow, &oh, &op);
+        if (big) { dx_sdl_present_host(big, ow, oh, op, w, h); return; }
+    }
     dx_sdl_present(p->px, w, h, p->pitch);
 }
 
@@ -229,6 +238,7 @@ static void surf_destroy(DxObj* o)
         dx_obj_release(b);
     }
     if (s->clipper) dx_obj_release(s->clipper);
+    free(s->dc_copy);
     if (D.primary == o) D.primary = NULL;
     for (int k = 0; k < D.nsurfs; k++)
         if (D.surfs[k] == o) { D.surfs[k] = D.surfs[--D.nsurfs]; break; }
@@ -292,6 +302,7 @@ static uint32_t s_blt(const uint32_t* a, int n)
     } else {
         dx_log_once("IDirectDrawSurface::Blt: flags %08x without a source (ignored)", flags);
     }
+    if (!d->primary && qol_display_scale() > 1) qol_gpu_overwritten(dr.x, dr.y, dr.w, dr.h, d->w, d->h);
     if (d->primary) present(d, dr);
     return DX_OK;
 }
@@ -306,6 +317,7 @@ static uint32_t s_bltfast(const uint32_t* a, int n)
     Rc dr = {(int32_t)dx_arg(a, n, 1), (int32_t)dx_arg(a, n, 2), sr.w, sr.h};
     int key = (dx_arg(a, n, 5) & DDBLTFAST_SRCCOLORKEY) && s->has_ck;
     copy(d, dr, s, sr, key, s->ck_lo, s->ck_hi);
+    if (!d->primary && qol_display_scale() > 1) qol_gpu_overwritten(dr.x, dr.y, dr.w, dr.h, d->w, d->h);
     if (d->primary) present(d, dr);
     return DX_OK;
 }
@@ -429,12 +441,34 @@ static uint32_t s_getdc(const uint32_t* a, int n)   /* 0x44 GetDC(HDC*) */
     if (!s || !out) return DX_E_INVALIDARG;
     if (!s->hdc) s->hdc = rt_fake_alloc(16);
     rt_w32(out, s->hdc);
+    if (qol_display_scale() > 1 && !s->primary) {
+        /* display.internal_scale: what GDI writes until ReleaseDC is found by comparing */
+        size_t sz = (size_t)s->pitch * (size_t)s->h;
+        if (!s->dc_copy) s->dc_copy = malloc(sz);
+        if (s->dc_copy) memcpy(s->dc_copy, rt_ptr(s->px), sz);
+    }
     return DX_OK;
 }
 
 static uint32_t s_releasedc(const uint32_t* a, int n)   /* 0x68 ReleaseDC(hdc) */
 {
     Surf* s = surf_of(dx_arg(a, n, 0));
+    if (s && s->dc_copy && qol_display_scale() > 1) {
+        const uint8_t* now = rt_ptr(s->px);
+        int x0 = s->w, y0 = s->h, x1 = -1, y1 = -1;
+        for (int y = 0; y < s->h; y++)
+            for (int x = 0; x < s->w; x++) {
+                size_t o = (size_t)y * (size_t)s->pitch + 2u * (size_t)x;
+                if (now[o] == s->dc_copy[o] && now[o + 1] == s->dc_copy[o + 1]) continue;
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
+            }
+        if (x1 >= 0) qol_gpu_overwritten(x0, y0, x1 - x0 + 1, y1 - y0 + 1, s->w, s->h);
+        free(s->dc_copy);
+        s->dc_copy = NULL;
+    }
     return s ? DX_OK : DX_E_INVALIDARG;
 }
 
@@ -565,6 +599,13 @@ static uint32_t dd_create_surface(const uint32_t* a, int n)   /* 0x18 CreateSurf
         if (D.primary) return 0x887600c8u;   /* DDERR_PRIMARYSURFACEALREADYEXISTS */
         dx_sdl_client_size(&w, &h);
         if (D.mode_w) { w = D.mode_w; h = D.mode_h; }
+        else if (qol_display_aspect() > 0) {
+            /* display.widescreen, windowed: the client area takes the widest picture (the game's
+             * wide 640 x 480 mode); the picture shown is the extent blitted (present) */
+            int ww = qol_display_wide_width(640, 480);
+            if (w < ww) w = ww;
+            if (h < 480) h = 480;
+        }
         if (nback < 0 || nback > 2) return DX_E_INVALIDARG;
         uint32_t pc = (caps & ~(DDSCAPS_SYSTEMMEMORY | DDSCAPS_VIDEOMEMORY)) | mem | DDSCAPS_VISIBLE;
         if (nback) pc |= DDSCAPS_FRONTBUFFER;
@@ -639,7 +680,18 @@ static uint32_t dd_enum_modes(const uint32_t* a, int n)
         rt_w32(desc + 4, DDSD_HEIGHT | DDSD_WIDTH | DDSD_PITCH | DDSD_PIXELFORMAT | DDSD_REFRESHRATE);
         rt_w32(desc + 0x68, 0);
         uint32_t w[2] = {desc, ctx};
-        if (dx_call_cb(cb, w, 2) == 0) break;   /* DDENUMRET_CANCEL */
+        uint32_t before = ctx ? rt_r32(ctx) : 0;
+        uint32_t ret = dx_call_cb(cb, w, 2);
+        int wide = qol_display_wide_width(m.w, m.h);
+        if (wide != m.w && ctx && rt_r32(ctx) == before + 1 && before < 30) {
+            /* display.widescreen: the game's callback (0x004b592c, docs/PLATFORM.md) keeps modes
+             * no wider than 640 in its list (count, then {w, h, bpp, refresh} entries); a 4:3
+             * mode it kept gets the wide width there, so the game sets it (the match's display
+             * modes) and sizes its views for it */
+            uint32_t e = ctx + 4 + 16 * before;
+            if (rt_r32(e) == (uint32_t)m.w && rt_r32(e + 4) == (uint32_t)m.h) rt_w32(e, (uint32_t)wide);
+        }
+        if (ret == 0) break;   /* DDENUMRET_CANCEL */
     }
     rt_frame_pop(0x6c);
     return DX_OK;
@@ -755,7 +807,7 @@ static uint32_t dd_wait_vblank(const uint32_t* a, int n)
 {
     (void)a; (void)n;
     static int on = -1;
-    if (on < 0) { const char* s = getenv("TM2_VBLANK"); on = !(s && *s == '0'); }
+    if (on < 0) on = settings_bool("debug.vblank", 1);
     if (!on) return DX_OK;
     uint64_t now = SDL_GetTicks();
     uint64_t next = (now * 60u / 1000u + 1u) * 1000u / 60u;   /* the next 1/60 s boundary */

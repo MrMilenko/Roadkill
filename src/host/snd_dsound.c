@@ -25,6 +25,8 @@
 #include "dx_com.h"
 #include "dx_mem.h"
 #include "platform/pf2_env.h"
+#include "host/qol/qol.h"
+#include "host/settings/settings.h"
 
 #define DSERR_ALLOCATED      0x8878000au
 #define DSERR_INVALIDCALL    0x88780032u
@@ -84,7 +86,7 @@ static void mix(void* ud, Uint8* stream, int len)
     static int32_t acc[2 * 4096];
     if (frames > 4096) frames = 4096;
     memset(acc, 0, sizeof(int32_t) * 2 * (size_t)frames);
-    double master = gain(A.master);
+    double master = gain(A.master) * qol_effects_gain() / 256.0;   /* roadkill.ini [audio] */
     for (int k = 0; k < MAXBUF; k++) {
         Buf* b = A.bufs[k];
         if (!b || b->primary || !b->playing || !b->data || !b->block) continue;
@@ -109,8 +111,26 @@ static void mix(void* ud, Uint8* stream, int len)
             b->pos += step;
         }
     }
+    static int log_on = -1, playing_max, fx_peak, out_peak;
+    static long long logged_frames;
+    if (log_on < 0) log_on = getenv("ROADKILL_SND_LOG") != NULL;
+    if (log_on) {
+        int np = 0;
+        for (int k = 0; k < MAXBUF; k++) if (A.bufs[k] && !A.bufs[k]->primary && A.bufs[k]->playing) np++;
+        if (np > playing_max) playing_max = np;
+        for (int i = 0; i < 2 * frames; i++) { int v = acc[i] < 0 ? -acc[i] : acc[i]; if (v > fx_peak) fx_peak = v; }
+    }
     if (snd_extra_mix) snd_extra_mix(acc, frames);
     for (int i = 0; i < 2 * frames; i++) out[i] = (int16_t)(acc[i] > 32767 ? 32767 : acc[i] < -32768 ? -32768 : acc[i]);
+    if (log_on) {
+        for (int i = 0; i < 2 * frames; i++) { int v = out[i] < 0 ? -out[i] : out[i]; if (v > out_peak) out_peak = v; }
+        logged_frames += frames;
+        if (logged_frames >= OUT_RATE) {
+            fprintf(stderr, "roadkill snd: effects playing %d, effects peak %d, output peak %d, master %d\n",
+                    playing_max, fx_peak, out_peak, (int)A.master);
+            logged_frames = 0; playing_max = fx_peak = out_peak = 0;
+        }
+    }
     if (len > frames * 4) memset(stream + frames * 4, 0, (size_t)(len - frames * 4));
 }
 
@@ -119,8 +139,9 @@ static int audio_open(void)
     if (A.dev) return 1;
     if (A.open_tried) return 0;
     A.open_tried = 1;
-    const char* ns = getenv("TM2_NOSOUND");
-    if (ns && *ns == '1') return 0;
+    if (!settings_bool("audio.sound", 1)) return 0;   /* roadkill.ini [audio], TM2_NOSOUND=1 */
+    qol_effects_gain();   /* read the volumes here, not first on the audio thread */
+    qol_music_gain();
     if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "tm2 host: SDL audio: %s (no sound)\n", SDL_GetError());
         return 0;

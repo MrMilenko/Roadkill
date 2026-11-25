@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "platform/pf2_env.h"
+#include "host/settings/settings.h"
 
 #define DX_MAGIC 0x424f5844u   /* "DXOB" */
 #define DX_MAXOBJ 8192
@@ -24,7 +25,7 @@ void dx_log_once(const char* fmt, ...)
 {
     static char* seen[512];
     static int nseen, all = -1;
-    if (all < 0) { const char* s = getenv("TM2_DX_LOG"); all = s && *s == '1'; }
+    if (all < 0) all = settings_bool("debug.dx_log", 0);
     char buf[256];
     va_list ap;
     va_start(ap, fmt);
@@ -157,12 +158,10 @@ uint32_t dx_unk_release(const uint32_t* a, int n)
     return o ? dx_obj_release(o) : 0;
 }
 
+/* a game callback (stdcall, no register arguments): its words from a[0] (compact, docs/RUNTIME.md) */
 uint32_t dx_call_cb(uint32_t fn, const uint32_t* words, int nwords)
 {
-    uint32_t v[10] = {0};
-    if (nwords > 6) nwords = 6;
-    for (int k = 0; k < nwords; k++) v[4 + k] = words[k];
-    return rt_call(fn, v, 4 + nwords);
+    return rt_call(fn, words, nwords);
 }
 
 static void rt_bind_host_dx_com(void)

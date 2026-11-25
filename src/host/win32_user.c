@@ -17,9 +17,11 @@
  * focus -> WM_ACTIVATEAPP + WM_ACTIVATE, expose -> WM_PAINT, close -> WM_CLOSE.
  * TranslateMessage posts WM_CHAR for keys that make a character.
  *
- * STUBS: dialogs (DialogBoxParamA answers IDCANCEL at once without running the dialog,
- * CreateDialogParamA fails with 0: the game's own config dialogs (audio, input) do not show);
- * menus (no menu bar: LoadMenuA a fake handle, Get/SetMenuItemInfoA fail / succeed doing
+ * Dialogs, the system control classes (Button, ComboBox, msctls_trackbar32, ...) and painting
+ * on their DCs are src/host/dialogs: the system classes get its window procedures, mouse
+ * messages go to the control under the cursor (w32dlg_mouse_target), PeekMessageA repaints.
+ *
+ * STUBS: menus (no menu bar: LoadMenuA a fake handle, Get/SetMenuItemInfoA fail / succeed doing
  * nothing); accelerators (never translate); MessageBoxA prints to stderr and answers the first
  * button (Retry / Cancel boxes: Cancel; TM2_MSGBOX=<id> overrides); ClipCursor, FlashWindow,
  * MessageBeep do nothing.
@@ -27,6 +29,8 @@
 #define _DARWIN_C_SOURCE
 #define _DEFAULT_SOURCE
 #include "win32_host.h"
+#include "host/settings/settings.h"
+#include "host/dialogs/dialogs.h"
 
 #include <SDL.h>
 #include <ctype.h>
@@ -236,7 +240,9 @@ static void pump(void)
             Win* w = win(h);
             mouse_x = ev.motion.x + (w ? w->x : 0);
             mouse_y = ev.motion.y + (w ? w->y : 0);
-            post(1, h, 0x200, mk_flags(), (uint32_t)(ev.motion.x & 0xffff) | (uint32_t)ev.motion.y << 16);
+            int32_t mx = ev.motion.x, my = ev.motion.y;
+            if (!(h = w32dlg_mouse_target(h, &mx, &my, 0))) break;   /* the control under the cursor */
+            post(1, h, 0x200, mk_flags(), (uint32_t)(mx & 0xffff) | (uint32_t)my << 16);
             break;
         }
         case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: {
@@ -247,7 +253,9 @@ static void pump(void)
             if (!m) break;
             if (!down) m += 1;
             else if (ev.button.clicks == 2) m += 2;   /* WM_*BUTTONDBLCLK */
-            post(1, hwnd_of_sdl(ev.button.windowID), m, mk_flags(), (uint32_t)(ev.button.x & 0xffff) | (uint32_t)ev.button.y << 16);
+            int32_t mx = ev.button.x, my = ev.button.y;
+            uint32_t h = w32dlg_mouse_target(hwnd_of_sdl(ev.button.windowID), &mx, &my, down);
+            if (h) post(1, h, m, mk_flags(), (uint32_t)(mx & 0xffff) | (uint32_t)my << 16);
             break;
         }
         case SDL_WINDOWEVENT: {
@@ -261,7 +269,7 @@ static void pump(void)
             case SDL_WINDOWEVENT_FOCUS_LOST:
                 /* the original pauses while deactivated; TM2_KEEP_ACTIVE=1 (automated runs, a
                  * window started from a terminal that keeps the focus) never deactivates */
-                if (getenv("TM2_KEEP_ACTIVE")) break;
+                if (settings_bool("debug.keep_active", 0)) break;
                 post(1, h, 0x06, 0, 0);
                 post(1, h, 0x1c, 0, 0);
                 break;
@@ -282,7 +290,7 @@ static void pump(void)
 static uint32_t u_PeekMessageA(const uint32_t* a, int n)
 {
     uint32_t tid = w32_thread_id();
-    if (tid == 1) { w32_yield(); win32_keys_tick(); pump(); }
+    if (tid == 1) { w32_yield(); win32_keys_tick(); pump(); w32dlg_tick(); }
     uint32_t h = W(1), lo = W(2), hi = W(3);
     for (int i = 0; i < nq; i++) {
         Msg* m = &q[i];
@@ -406,8 +414,9 @@ static uint32_t u_CreateWindowExA(const uint32_t* a, int n)
     w->alive = 1;
     w->hwnd = HWND_BASE + 0x10u * (uint32_t)i;
     /* the system classes (BUTTON, EDIT, STATIC, LISTBOX, ...): no behaviour, DefWindowProcA */
-    w->proc = c ? c->proc : rt_import_slot("USER32.dll!DefWindowProcA");
-    if (!c) fprintf(stderr, "tm2: CreateWindowExA class %s: a plain window\n", cname);
+    w->proc = c ? c->proc : w32dlg_class_proc(cname);   /* the system classes: src/host/dialogs */
+    if (!w->proc) w->proc = rt_import_slot("USER32.dll!DefWindowProcA");
+    if (!c && !w32dlg_class_proc(cname)) fprintf(stderr, "tm2: CreateWindowExA class %s: a plain window\n", cname);
     w->exstyle = W(0);
     w->style = W(3);
     w->x = W(4) == 0x80000000u ? 0 : (int32_t)W(4);
@@ -495,7 +504,7 @@ static uint32_t u_ShowWindow(const uint32_t* a, int n)
     return was;
 }
 static uint32_t u_UpdateWindow(const uint32_t* a, int n) { return win(W(0)) != NULL; }
-static uint32_t u_InvalidateRect(const uint32_t* a, int n) { (void)a; (void)n; return 1; }
+static uint32_t u_InvalidateRect(const uint32_t* a, int n) { w32dlg_invalidate(W(0)); return 1; }
 
 static uint32_t u_GetWindowLongA(const uint32_t* a, int n)
 {
@@ -746,7 +755,7 @@ static uint32_t u_ClipCursor(const uint32_t* a, int n) { (void)a; (void)n; retur
 static uint32_t fake_handle(void) { return w32_handle_new(H_MISC, NULL); }
 static uint32_t u_LoadIconA(const uint32_t* a, int n) { (void)a; (void)n; return fake_handle(); }
 static uint32_t u_LoadCursorA(const uint32_t* a, int n) { (void)a; (void)n; return fake_handle(); }
-static uint32_t u_LoadBitmapA(const uint32_t* a, int n) { (void)a; (void)n; return fake_handle(); }
+static uint32_t u_LoadBitmapA(const uint32_t* a, int n) { uint32_t b = w32dlg_LoadBitmapA(a, n); return b ? b : fake_handle(); }
 static uint32_t u_LoadImageA(const uint32_t* a, int n) { (void)a; (void)n; return fake_handle(); }
 static uint32_t u_LoadMenuA(const uint32_t* a, int n) { (void)a; (void)n; return fake_handle(); }
 static uint32_t u_LoadAcceleratorsA(const uint32_t* a, int n) { (void)a; (void)n; return fake_handle(); }
@@ -781,7 +790,7 @@ static uint32_t u_LoadStringA(const uint32_t* a, int n)
 static uint32_t u_MessageBoxA(const uint32_t* a, int n)
 {
     fprintf(stderr, "tm2: MessageBox [%s] %s\n", W(2) ? w32_str(W(2)) : "", W(1) ? w32_str(W(1)) : "");
-    const char* o = getenv("TM2_MSGBOX");
+    const char* o = settings_str("debug.msgbox", NULL);
     if (o && *o) return (uint32_t)atoi(o);
     switch (W(3) & 0xf) {
     case 0: return 1;   /* MB_OK: IDOK */
@@ -796,19 +805,11 @@ static uint32_t u_MessageBoxA(const uint32_t* a, int n)
 static uint32_t u_MessageBeep(const uint32_t* a, int n) { (void)a; (void)n; return 1; }
 static uint32_t u_FlashWindow(const uint32_t* a, int n) { (void)a; (void)n; return 0; }
 
-/* dialogs: STUBS (see the top) */
-static uint32_t u_DialogBoxParamA(const uint32_t* a, int n)
-{
-    fprintf(stderr, "tm2: DialogBoxParamA(template 0x%x): not shown, IDCANCEL\n", W(1));
-    return 2;
-}
-static uint32_t u_CreateDialogParamA(const uint32_t* a, int n)
-{
-    fprintf(stderr, "tm2: CreateDialogParamA(template 0x%x): not created\n", W(1));
-    return 0;
-}
-static uint32_t u_EndDialog(const uint32_t* a, int n) { (void)a; (void)n; return 1; }
-static uint32_t u_IsDialogMessageA(const uint32_t* a, int n) { (void)a; (void)n; return 0; }
+/* dialogs: src/host/dialogs */
+static uint32_t u_DialogBoxParamA(const uint32_t* a, int n) { return w32dlg_DialogBoxParamA(a, n); }
+static uint32_t u_CreateDialogParamA(const uint32_t* a, int n) { return w32dlg_CreateDialogParamA(a, n); }
+static uint32_t u_EndDialog(const uint32_t* a, int n) { return w32dlg_EndDialog(a, n); }
+static uint32_t u_IsDialogMessageA(const uint32_t* a, int n) { return w32dlg_IsDialogMessageA(a, n); }
 
 /* rectangles */
 static uint32_t u_SetRect(const uint32_t* a, int n) { put_rect(W(0), (int32_t)W(1), (int32_t)W(2), (int32_t)W(3), (int32_t)W(4)); return 1; }
@@ -849,24 +850,15 @@ static uint32_t u_GetSystemMetrics(const uint32_t* a, int n)
 }
 static uint32_t u_GetSysColor(const uint32_t* a, int n) { return W(0) == 5 ? 0xffffffu : W(0) == 8 ? 0 : 0xc0c0c0u; }
 
-/* painting on a window: a DC that draws nothing (the game draws through DirectDraw) */
-static uint32_t u_GetDC(const uint32_t* a, int n) { (void)a; (void)n; return w32_handle_new(H_GDI, NULL); }
-static uint32_t u_ReleaseDC(const uint32_t* a, int n) { if (w32_handle_type(W(1)) == H_GDI) w32_handle_free(W(1)); return 1; }
-/* BeginPaint(hwnd, &PAINTSTRUCT {hdc, erase, rect, ...}) */
-static uint32_t u_BeginPaint(const uint32_t* a, int n)
-{
-    uint32_t dc = w32_handle_new(H_GDI, NULL);
-    Win* w = win(W(0));
-    rt_w32(W(1), dc);
-    rt_w32(W(1) + 4, 0);
-    put_rect(W(1) + 8, 0, 0, w ? w->w : 0, w ? w->h : 0);
-    return dc;
-}
-static uint32_t u_EndPaint(const uint32_t* a, int n) { uint32_t dc = rt_r32(W(1)); if (w32_handle_type(dc) == H_GDI) w32_handle_free(dc); return 1; }
-static uint32_t u_FillRect(const uint32_t* a, int n) { (void)a; (void)n; return 1; }
-static uint32_t u_FrameRect(const uint32_t* a, int n) { (void)a; (void)n; return 1; }
-/* DrawTextA(hdc, text, count, rect, format): the height of one 16 pixel line */
-static uint32_t u_DrawTextA(const uint32_t* a, int n) { (void)a; (void)n; return 16; }
+/* painting on a window: DCs on the controls' pictures (src/host/dialogs); the game's own window
+ * gets a DC that only measures (the game draws through DirectDraw) */
+static uint32_t u_GetDC(const uint32_t* a, int n) { return w32dlg_GetDC(a, n); }
+static uint32_t u_ReleaseDC(const uint32_t* a, int n) { return w32dlg_ReleaseDC(a, n); }
+static uint32_t u_BeginPaint(const uint32_t* a, int n) { return w32dlg_BeginPaint(a, n); }
+static uint32_t u_EndPaint(const uint32_t* a, int n) { return w32dlg_EndPaint(a, n); }
+static uint32_t u_FillRect(const uint32_t* a, int n) { return w32dlg_FillRect(a, n); }
+static uint32_t u_FrameRect(const uint32_t* a, int n) { return w32dlg_FrameRect(a, n); }
+static uint32_t u_DrawTextA(const uint32_t* a, int n) { return w32dlg_DrawTextA(a, n); }
 
 void rt_bind_win32_user(void)
 {

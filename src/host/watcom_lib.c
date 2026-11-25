@@ -8,6 +8,7 @@
  * first (PF2_COM style words).
  */
 #include "win32_host.h"
+#include "host/settings/settings.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -146,7 +147,7 @@ static uint32_t l_open(const uint32_t* a, int n)
     if (mode & 0x40) fl |= O_TRUNC;
     if (mode & 0x80) fl |= O_EXCL;
     int fd = open(path, fl, 0644);
-    if (getenv("TM2_TRACE_FILES")) fprintf(stderr, "tm2: open %s -> %s %s\n", w32_str(name), path, fd < 0 ? "FAILED" : "ok");
+    if (settings_bool("debug.trace_files", 0)) fprintf(stderr, "tm2: open %s -> %s %s\n", w32_str(name), path, fd < 0 ? "FAILED" : "ok");
     if (fd < 0) return 0xffffffffu;
     for (uint32_t h = 3; h < NFD; h++) if (!fds[h]) { fds[h] = fd + 1; return h; }
     close(fd);
@@ -212,8 +213,7 @@ static uint32_t l_vfprintf(const uint32_t* a, int n)
     char buf[2048];
     uint32_t va = rt_r32(W(2));
     int len = w32_format(buf, sizeof buf, w32_str(W(1)), va_word, &va);
-    const char* dbg = getenv("TM2_DEBUG");
-    if (dbg && *dbg == '1') fprintf(stderr, "tm2 debug: %s", buf);
+    if (settings_bool("debug.debug", 0)) fprintf(stderr, "tm2 debug: %s", buf);
     return (uint32_t)len;
 }
 

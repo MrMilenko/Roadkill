@@ -1,14 +1,18 @@
 /*
  * win32_reg.c: the ADVAPI32 registry imports on a small text file (port code).
  *
- * The file is TM2_REGISTRY, else $XDG_CONFIG_HOME/opentm2/registry.txt, else
- * ~/.config/opentm2/registry.txt. One line per key ("K\t<path>") and per value
- * ("V\t<key path>\t<name>\t<type>\t<hex bytes>"); key paths are "HKLM\Software\...", compared
- * case insensitively. It is read at the first registry call and written after every change.
+ * The file is settings_registry_file() (settings.h: [paths] registry / TM2_REGISTRY, else
+ * registry.txt next to roadkill.ini, moved there once from ~/.config/opentm2). One line per
+ * key ("K\t<path>") and per value ("V\t<key path>\t<name>\t<type>\t<hex bytes>"); key
+ * paths are "HKLM\Software\...", compared case insensitively. It is read at the first registry
+ * call and written after every change.
  */
 #define _DARWIN_C_SOURCE
 #define _DEFAULT_SOURCE
 #include "win32_host.h"
+
+#include "host/qol/qol.h"
+#include "host/settings/settings.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,22 +30,8 @@ static char file[1024];
 
 static const char* reg_file(void)
 {
-    if (!file[0]) {
-        const char* f = getenv("TM2_REGISTRY");
-        if (f && *f) snprintf(file, sizeof file, "%s", f);
-        else {
-            const char* x = getenv("XDG_CONFIG_HOME");
-            const char* h = getenv("HOME");
-            char dir[900];
-            if (x && *x) snprintf(dir, sizeof dir, "%s/opentm2", x);
-            else snprintf(dir, sizeof dir, "%s/.config/opentm2", h ? h : ".");
-            char parent[900];
-            snprintf(parent, sizeof parent, "%.*s", (int)(strrchr(dir, '/') - dir), dir);
-            mkdir(parent, 0755);
-            mkdir(dir, 0755);
-            snprintf(file, sizeof file, "%s/registry.txt", dir);
-        }
-    }
+    /* settings.h: paths.registry / TM2_REGISTRY, else registry.txt in the per user data folder */
+    if (!file[0]) snprintf(file, sizeof file, "%s", settings_registry_file());
     return file;
 }
 
@@ -206,6 +196,11 @@ static uint32_t r_RegQueryValueExA(const uint32_t* a, int n)
     if (W(4)) {
         if (cap < v->size) return 0xea;   /* ERROR_MORE_DATA */
         memcpy(rt_ptr(W(4)), v->data, v->size);
+        /* QoL (host/qol/qol.h, [input] controller): with a controller connected the saved
+         * joystick switch reads as on (1) so the game uses the pad without a visit to its input
+         * screen; the file keeps what the game wrote */
+        if (v->size == 4 && !strcasecmp(v->name, "InputJoystickStatus") && qol_controller_default())
+            rt_w32(W(4), 1);
     }
     return 0;
 }

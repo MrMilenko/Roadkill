@@ -23,6 +23,10 @@
 
 /* 0x00493ed0 (eax = view, stack: float x0, y0, w, h fractions (bits), i32 fov, one unused word;
  * ret 0x18) */
+/* Roadkill's display.widescreen, not the original: > 0 (set by src/host/qol/display.c) widens
+ * the horizontal angle on screens wider than 4:3, keeping the original's vertical angle */
+extern double en10_widescreen_aspect;
+
 void en10_level_setup_viewport(En2Env* e, uint32_t view, uint32_t fx, uint32_t fy, uint32_t fw, uint32_t fh,
                                uint32_t fov, uint32_t unused);
 

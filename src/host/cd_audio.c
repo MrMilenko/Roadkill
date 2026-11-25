@@ -11,7 +11,8 @@
  * The mixer callback reads the image (16 sectors ahead at a time) on the audio thread, under the
  * device lock that the game's calls also take. A play that reaches its end stops (the MCI mode
  * goes to "stopped", the game's monitor thread then starts the track again) and counts in
- * cd_audio_finished for MCI_NOTIFY.
+ * cd_audio_finished for MCI_NOTIFY; with [gameplay] loop_music (host/qol/qol.h) it starts over
+ * at once instead and keeps playing.
  *
  * TM2_CD_LOG=1: the MCI calls (snd_mci.c) and, once a second while playing, the position and the
  * peak level of what was mixed.
@@ -22,6 +23,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "host/qol/qol.h"
+#include "host/settings/settings.h"
+
 #define AHEAD 16
 
 static struct {
@@ -30,6 +34,7 @@ static struct {
     const char* why;
     volatile int state;
     uint32_t pos, end;        /* LBAs; pos's frame offset in off */
+    uint32_t start;           /* where the current play began (loop_music) */
     uint32_t off;
     uint32_t finished;
     uint32_t volume;
@@ -47,8 +52,7 @@ static struct {
 int cd_audio_log(void)
 {
     if (C.log < 0) {
-        const char* l = getenv("TM2_CD_LOG");
-        C.log = l && *l == '1';
+        C.log = settings_bool("debug.cd_log", 0);
     }
     return C.log;
 }
@@ -56,9 +60,18 @@ int cd_audio_log(void)
 static void mix(int32_t* acc, int frames)
 {
     if (C.state != CD_PLAYING || !C.img) return;
-    int32_t gl = (int32_t)(C.volume & 0xffff), gr = (int32_t)(C.volume >> 16);
+    int32_t qg = qol_music_gain();   /* roadkill.ini [audio] music / master volume, 256 = 1 */
+    int32_t gl = (int32_t)(C.volume & 0xffff) * qg / 256, gr = (int32_t)(C.volume >> 16) * qg / 256;
     int peak = 0, i = 0;
     while (i < frames) {
+        if (C.pos >= C.end && qol_loop_music() && C.start < C.end) {
+            /* QoL [gameplay] loop_music: the play starts again at once (the original's CD
+             * monitor thread restarts it after up to 3 s of silence) */
+            if (cd_audio_log()) fprintf(stderr, "tm2 cd: loop_music: play [%u, %u) starts again\n", C.start, C.end);
+            C.pos = C.start;
+            C.off = 0;
+            continue;
+        }
         if (C.pos >= C.end) {
             C.state = CD_STOPPED;
             C.finished++;
@@ -129,6 +142,9 @@ CdImage* cd_audio_init(const char** why)
 void cd_audio_play(uint32_t from, uint32_t to)
 {
     snd_audio_lock();
+    /* loop_music: a play with no MCI_FROM (the game's resume after a pause) goes on to the same
+     * end and keeps where the play began */
+    if (!(to == C.end && from >= C.start && from < C.end)) C.start = from;
     C.pos = from;
     C.off = 0;
     C.end = to;

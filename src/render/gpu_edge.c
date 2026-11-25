@@ -15,15 +15,20 @@ int32_t gpu_slope(int32_t minor, int32_t major, int32_t one) {
 
 /* per octant: x major, up, minor tile step, major tile step, major dcol, major drow,
  * ends swapped (start at p1) */
-static const int8_t OCT[8][7] = {
-    {1, 0, 0x54, 1, 1, 0, 0},
-    {1, 0, 0x54, -1, 1, 0, 0},
-    {1, 1, 0x54, -1, 1, 0, 1},
-    {1, 1, 0x54, 1, 1, 0, 1},
-    {0, 0, 1, 0x54, 0, 1, 0},
-    {0, 0, -1, 0x54, 0, 1, 0},
-    {0, 1, -1, 0x54, 0, 1, 1},
-    {0, 1, 1, 0x54, 0, 1, 1},
+#ifndef GPU_HI
+typedef int8_t oct_t;
+#else
+typedef int16_t oct_t;   /* GPU_HI: tile steps past 127 */
+#endif
+static const oct_t OCT[8][7] = {
+    {1, 0, GPU_COLS, 1, 1, 0, 0},
+    {1, 0, GPU_COLS, -1, 1, 0, 0},
+    {1, 1, GPU_COLS, -1, 1, 0, 1},
+    {1, 1, GPU_COLS, 1, 1, 0, 1},
+    {0, 0, 1, GPU_COLS, 0, 1, 0},
+    {0, 0, -1, GPU_COLS, 0, 1, 0},
+    {0, 1, -1, GPU_COLS, 0, 1, 1},
+    {0, 1, 1, GPU_COLS, 0, 1, 1},
 };
 
 void gpu_edge_setup(GpuEdge* e, const int32_t* p0, const int32_t* p1) {
@@ -31,13 +36,22 @@ void gpu_edge_setup(GpuEdge* e, const int32_t* p0, const int32_t* p1) {
     int32_t dy = (int32_t)((uint32_t)p1[1] - (uint32_t)p0[1]);
     /* ORIGINAL BUG: the signs are taken from bit 15 (>> 14 & 2, >> 15 & 1, >> 13 & 4), not
      * bit 31: differences of 0x8000 (1024 pixels) or more are put in the wrong octant. */
+#ifndef GPU_HI
     uint32_t oct = (uint32_t)(dy >> 14) & 2u;
     oct |= (uint32_t)(dx >> 15) & 1u;
     int32_t ax = dx < 0 ? (int32_t)(0u - (uint32_t)dx) : dx;
     int32_t ay = dy < 0 ? (int32_t)(0u - (uint32_t)dy) : dy;
     oct |= (uint32_t)((int32_t)((uint32_t)ax - (uint32_t)ay) >> 13) & 4u;
+#else
+    /* GPU_HI (Roadkill's larger screens, not the original): the signs from bit 31, so edges of
+     * 1024 pixels and more keep their octant */
+    uint32_t oct = (dy < 0 ? 2u : 0u) | (dx < 0 ? 1u : 0u);
+    int32_t ax = dx < 0 ? (int32_t)(0u - (uint32_t)dx) : dx;
+    int32_t ay = dy < 0 ? (int32_t)(0u - (uint32_t)dy) : dy;
+    oct |= ax < ay ? 4u : 0u;
+#endif
     e->octant = oct;
-    const int8_t* o = OCT[oct];
+    const oct_t* o = OCT[oct];
     e->slope = o[0] ? gpu_slope(ay, ax, 0) : gpu_slope(ax, ay, 1);
     e->xmajor = o[0];
     e->up = o[1];
@@ -51,7 +65,7 @@ void gpu_edge_setup(GpuEdge* e, const int32_t* p0, const int32_t* p1) {
     e->row0 = a[1] >> 8;
     e->col1 = b[0] >> 8;
     e->row1 = b[1] >> 8;
-    e->end_tile = (int32_t)((uint32_t)e->row1 * 0x54u + (uint32_t)e->col1);
+    e->end_tile = (int32_t)((uint32_t)e->row1 * (uint32_t)GPU_COLS + (uint32_t)e->col1);
     uint32_t s = (uint32_t)e->slope, c0 = (uint32_t)e->col0 << 8, r0 = (uint32_t)e->row0 << 8;
     uint32_t ax0 = (uint32_t)a[0], ay0 = (uint32_t)a[1];
     uint32_t major, minor;   /* error along the major axis (times slope), distance on the minor */

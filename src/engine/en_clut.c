@@ -6,6 +6,8 @@
 
 #include <string.h>
 
+#include "host/qol/qol.h"
+
 #define NDEFS 25
 #define DEF_SIZE 0x18
 #define NSLOTS 15
@@ -31,6 +33,9 @@ uint32_t en_clut_new_def(EnClutEnv* e, uint32_t a, uint32_t b) {
          * later searches then run past the 25 entries into the slot table */
         last++;
         if (last < NDEFS) r = e->defs + (uint32_t)last * DEF_SIZE;
+        /* QoL fix_crashes (not the original): keep the index on the last entry of a full table,
+         * so searches (and the writes through what they find) stay inside it */
+        else if (qol_fix_crashes()) { qol_fixed("clutAnimNewDef 0x00499ee8: full table"); last = NDEFS - 1; }
     }
     e->last = last;
     return r;

@@ -15,6 +15,7 @@
  */
 #include "win32_host.h"
 #include "cd_audio.h"
+#include "host/settings/settings.h"
 
 #include <SDL.h>
 #include <stdio.h>
@@ -38,8 +39,7 @@ static SDL_Joystick* joys[16];
 static SDL_Joystick* joy(uint32_t id)
 {
     if (joy_ok < 0) {
-        const char* no = getenv("TM2_NOJOY");
-        joy_ok = !(no && *no == '1') && SDL_InitSubSystem(SDL_INIT_JOYSTICK) == 0;
+        joy_ok = settings_bool("input.controller", 1) && SDL_InitSubSystem(SDL_INIT_JOYSTICK) == 0;
     }
     if (!joy_ok || id >= 16) return NULL;
     SDL_JoystickUpdate();

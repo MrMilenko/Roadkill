@@ -18,6 +18,7 @@
  * a second from the last present, checked in PeekMessageA (win32_keys_tick()).
  */
 #include "win32_host.h"
+#include "host/settings/settings.h"
 
 #include <SDL.h>
 #include <ctype.h>
@@ -51,7 +52,7 @@ static void parse(void)
 {
     if (parsed) return;
     parsed = 1;
-    const char* k = getenv("TM2_KEYS");
+    const char* k = settings_str("debug.keys", NULL);
     while (k && *k && npress < 256) {
         char item[64];
         size_t l = strcspn(k, ",");
@@ -66,11 +67,9 @@ static void parse(void)
         if (sc == SDL_SCANCODE_UNKNOWN) { fprintf(stderr, "tm2 host: TM2_KEYS: unknown key %s\n", f1); continue; }
         presses[npress++] = (Press){atoi(item), f2 ? atoi(f2) : 4, sc, 0, 0};
     }
-    const char* e = getenv("TM2_SHOT_EVERY");
-    if (e && atoi(e) > 0) {
-        shot_every = atoi(e);
-        const char* d = getenv("TM2_SHOT_DIR");
-        snprintf(shot_dir, sizeof shot_dir, "%s", d && *d ? d : "shots");
+    if (settings_int("debug.shot_every", 0) > 0) {
+        shot_every = settings_int("debug.shot_every", 0);
+        snprintf(shot_dir, sizeof shot_dir, "%s", settings_str("debug.shot_dir", "shots"));
         mkdir(shot_dir, 0755);
     }
 }
@@ -88,7 +87,7 @@ static void push(SDL_Scancode sc, int down)
     ev.key.timestamp = SDL_GetTicks();
     SDL_PushEvent(&ev);
     scripted[sc] = (uint8_t)down;
-    if (getenv("TM2_KEYS_LOG")) fprintf(stderr, "tm2 host: key %s %s\n", SDL_GetScancodeName(sc), down ? "down" : "up");
+    if (settings_bool("debug.keys_log", 0)) fprintf(stderr, "tm2 host: key %s %s\n", SDL_GetScancodeName(sc), down ? "down" : "up");
 }
 
 /* the schedule's clock: presented frames, and while nothing is presented (a menu waiting for

@@ -22,6 +22,7 @@
 #define _DARWIN_C_SOURCE
 #define _DEFAULT_SOURCE
 #include "win32_host.h"
+#include "host/settings/settings.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -85,13 +86,11 @@ void w32_handle_free(uint32_t h) { int i = hidx(h); if (i > 0) { handles[i].type
 
 const char* w32_data_root(void)
 {
-    const char* r = getenv("TM2_DATA");
-    return r && *r ? r : "disc/files";
+    return settings_str("paths.data", "disc/files");   /* settings.h: roadkill.ini, TM2_DATA */
 }
 char w32_cd_letter(void)
 {
-    const char* c = getenv("TM2_CD");
-    return c && *c ? (char)toupper((unsigned char)*c) : 'D';
+    return (char)toupper((unsigned char)*settings_str("debug.cd_letter", "D"));
 }
 
 const char* w32_host_path(const char* game, char* out, size_t cap)
@@ -411,7 +410,7 @@ static uint32_t k_CreateFileA(const uint32_t* a, int n)
     case 5: fl |= O_TRUNC; break;             /* TRUNCATE_EXISTING */
     }
     int fd = open(path, fl, 0644);
-    if (getenv("TM2_TRACE_FILES")) fprintf(stderr, "tm2: CreateFileA %s -> %s %s\n", name, path, fd < 0 ? "FAILED" : "ok");
+    if (settings_bool("debug.trace_files", 0)) fprintf(stderr, "tm2: CreateFileA %s -> %s %s\n", name, path, fd < 0 ? "FAILED" : "ok");
     if (fd < 0) { w32_last_error = errno == ENOENT ? 2u : 5u; return 0xffffffffu; }
     struct stat st;
     if (fstat(fd, &st) == 0 && S_ISDIR(st.st_mode)) { close(fd); w32_last_error = 5; return 0xffffffffu; }
@@ -547,7 +546,7 @@ static uint32_t k_GetCommandLineA(const uint32_t* a, int n)
 {
     (void)a; (void)n;
     if (!cmdline) {
-        const char* c = getenv("TM2_CMDLINE");
+        const char* c = settings_str("debug.cmdline", NULL);
         char buf[512];
         snprintf(buf, sizeof buf, "%c:\\TM2.EXE%s%s", w32_cd_letter(), c && *c ? " " : "", c ? c : "");
         cmdline = w32_static_str(buf);

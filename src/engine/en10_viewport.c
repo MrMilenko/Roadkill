@@ -6,6 +6,11 @@
 #include "en10_viewport.h"
 #include "en5_float.h"
 
+/* Roadkill's display.widescreen (src/host/qol/display.c sets it when the switch is on): the
+ * screen's aspect, 0 = off (the original). A variable here, so this port still builds and checks
+ * on its own (the emulator check links no host; there it stays 0). */
+double en10_widescreen_aspect = 0;
+
 static float bits_f(uint32_t b) { float f; memcpy(&f, &b, 4); return f; }
 static float rf(En2Env* e, uint32_t a) { float f; memcpy(&f, e->mem(e->user, a), 4); return f; }
 static void wf(En2Env* e, uint32_t a, float f) { memcpy(e->mem(e->user, a), &f, 4); }
@@ -48,6 +53,16 @@ void en10_level_setup_viewport(En2Env* e, uint32_t view, uint32_t fx, uint32_t f
     double ha = (double)ri(e, v + 0x00) * rd(e, 0x004e2e90u);   /* half angle in radians */
     wf(e, 0x00a04144u, (float)ha);
     double hx = (double)rf(e, 0x00a04144u);
+    if (en10_widescreen_aspect > 0) {
+        /* Roadkill's display.widescreen (src/host/qol/display.h), not the original: on a screen
+         * wider than 4:3 the field of view is the original's on the 4:3 part, widened to the
+         * screen's width: the vertical angle (from the aspect below) stays the original's */
+        double W = (double)ri(e, 0x004e83ecu), H = (double)ri(e, 0x004e83f0u);
+        if (W * 3.0 > H * 4.0) {
+            wf(e, 0x00a04144u, (float)atan(tan(hx) * (W / H) * 0.75));
+            hx = (double)rf(e, 0x00a04144u);
+        }
+    }
     double tx = tan(hx);
     double k = rd(e, 0x004e2eb8u);   /* 4096 */
     double va = atan((double)ri(e, v + 0x1c) * tx / (double)ri(e, v + 0x18));

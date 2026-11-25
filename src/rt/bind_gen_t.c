@@ -291,7 +291,7 @@ static uint32_t g_0048bc38(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_nop(&e);
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_0048c50c(const uint32_t* a, int n)
@@ -327,7 +327,7 @@ static uint32_t g_0048e254(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_set_4e8288(&e, rt_arg(a, n, 0));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_0048e25c(const uint32_t* a, int n)
@@ -372,7 +372,7 @@ static uint32_t g_00492c4c(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_cs_list_add(&e, rt_arg(a, n, 0));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_00492c60(const uint32_t* a, int n)
@@ -399,7 +399,7 @@ static uint32_t g_00492de4(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_cs_set_model(&e, rt_arg(a, n, 0), rt_arg(a, n, 1));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_00492df4(const uint32_t* a, int n)
@@ -615,7 +615,7 @@ static uint32_t g_004937b8(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_nop(&e);
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004937e0(const uint32_t* a, int n)
@@ -921,7 +921,7 @@ static uint32_t g_004979fc(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_rect6_reset(&e, rt_arg(a, n, 0));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_00497a68(const uint32_t* a, int n)
@@ -1047,7 +1047,7 @@ static uint32_t g_00498b2c(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_resource_init(&e, rt_arg(a, n, 0), rt_arg(a, n, 1));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_00498b38(const uint32_t* a, int n)
@@ -1182,7 +1182,7 @@ static uint32_t g_0049d4ac(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_set_4e8430(&e, rt_arg(a, n, 0));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_0049de80(const uint32_t* a, int n)
@@ -1335,7 +1335,7 @@ static uint32_t g_0049eda4(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_set_a5da20(&e, rt_arg(a, n, 0));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_0049ee74(const uint32_t* a, int n)
@@ -1344,7 +1344,7 @@ static uint32_t g_0049ee74(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_key_counters_clear(&e);
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_0049ee90(const uint32_t* a, int n)
@@ -1353,7 +1353,7 @@ static uint32_t g_0049ee90(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_dpc_set_base(&e, rt_arg(a, n, 0));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_0049ee98(const uint32_t* a, int n)
@@ -1380,7 +1380,7 @@ static uint32_t g_004a1ee0(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_nop(&e);
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004a1ee1(const uint32_t* a, int n)
@@ -1425,7 +1425,7 @@ static uint32_t g_004a2054(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en4_nop_4a2054(&e);
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004a2058(const uint32_t* a, int n)
@@ -1434,7 +1434,7 @@ static uint32_t g_004a2058(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_keys_clear(&e);
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004a2060(const uint32_t* a, int n)
@@ -2586,7 +2586,7 @@ static uint32_t g_004aa020(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_component_clear(&e, rt_arg(a, n, 0));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004aa064(const uint32_t* a, int n)
@@ -2703,7 +2703,7 @@ static uint32_t g_004aaa60(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_set_c_1(&e, rt_arg(a, n, 0));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004aaa70(const uint32_t* a, int n)
@@ -2748,7 +2748,7 @@ static uint32_t g_004aabc4(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_nop(&e);
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004aac00(const uint32_t* a, int n)
@@ -2784,7 +2784,7 @@ static uint32_t g_004ab72c(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_set_254(&e, rt_arg(a, n, 0), rt_arg(a, n, 1));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004ab734(const uint32_t* a, int n)
@@ -2793,7 +2793,7 @@ static uint32_t g_004ab734(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_set_258(&e, rt_arg(a, n, 0), rt_arg(a, n, 1));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004ab9d0(const uint32_t* a, int n)
@@ -3144,7 +3144,7 @@ static uint32_t g_004ad82c(const uint32_t* a, int n)
     En2Env e = rt_en2env();
     en2_set_screen_ptr(&e, rt_arg(a, n, 0));
     rt_en2env_done();
-    return 0;
+    return rt_arg(a, n, 0);
 }
 
 static uint32_t g_004b270c(const uint32_t* a, int n)

@@ -63,5 +63,8 @@ void dx_sdl_set_mode(int w, int h, int fullscreen);   /* SetDisplayMode / Restor
 void dx_sdl_set_hwnd(uint32_t hwnd);                  /* SetCooperativeLevel's window */
 /* shows w x h 16 bit pixels at game address px (pitch bytes) in the window */
 void dx_sdl_present(uint32_t px, int w, int h, int pitch);
+/* the same for a picture in host memory, tw x th pixels shown as the game's w x h display
+ * (display.internal_scale, host/qol/display.h: tw x th is a multiple of w x h) */
+void dx_sdl_present_host(const void* pixels, int tw, int th, int pitch, int w, int h);
 
 #endif

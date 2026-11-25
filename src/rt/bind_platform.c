@@ -15,6 +15,7 @@
  * with the registers the harness recorded.
  */
 #include "rt_env.h"
+#include "host/qol/display.h"
 #include "platform/pf_display.h"
 #include "platform/pf_dsound.h"
 #include "platform/pf_mouse.h"
@@ -210,7 +211,12 @@ static uint32_t b_display_present(const uint32_t* a, int n)
 static uint32_t b_display_set_mode(const uint32_t* a, int n)
 {
     DISP_BEGIN(1);
-    int32_t r = pf_display_set_mode_index(&d, I(1));
+    int32_t idx = (int32_t)I(1);
+    /* Roadkill's display.widescreen (host/qol/display.h), not the original: a saved resolution
+     * index that is not in the list (-1, saved while the host's mode list was empty, see
+     * dx_ddraw.c dd_enum_modes) picks the game's default, its last (largest) mode */
+    if (qol_display_aspect() > 0 && (idx < 0 || idx >= d.mode_count) && d.mode_count > 0) idx = d.mode_count - 1;
+    int32_t r = pf_display_set_mode_index(&d, idx);
     s_disp_be.user = saved;   /* the create call rebuilt the object: nothing to store back */
     return (uint32_t)r;
 }

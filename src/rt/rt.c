@@ -270,7 +270,7 @@ uint32_t rt_call(uint32_t fn, const uint32_t* args, int n)
         if (rt_import_name(slot)) return rt_call(slot, args, n);
     }
     if (!b) rt_stop("no binding for", fn);
-    if (b->arity > n && !b->warned) {
+    if (b->arity > n && !b->warned && getenv("TM2_ARITY")) {   /* developer check: TM2_ARITY=1 warns, =stop stops */
         ((Bind*)b)->warned = 1;
         const char* pn = depth > 0 ? rt_name(chain[(depth - 1) % CHAIN]) : NULL;
         fprintf(stderr, "tm2: arity: 0x%08x %s takes %d arguments, called with %d from 0x%08x %s\n", fn, b->name,

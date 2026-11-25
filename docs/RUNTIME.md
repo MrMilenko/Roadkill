@@ -103,9 +103,8 @@ What the runtime has shown is missing:
   music tracks straight from the player's CD image (TM2_CDIMAGE, default the .cue in TM2_DATA's
   parent folder, e.g. disc/TWISTEDMETAL2.cue; never copied), mixed into the DirectSound output.
   Open, status, TMSF / MSF / ms time formats, play from / to, pause, resume, stop, seek, close;
-  a track that ends stops (mode "stopped"). GAP: the game replays it from its monitor thread
-  (0x004b902c, polls every 3 s), but that thread never gets the host lock (the main loop never
-  blocks), so for now a track plays once, until the next screen picks one. The CD volume is
+  a track that ends stops (mode "stopped") and the game's monitor thread (0x004b902c, polls
+  every 3 s) plays it again; `[gameplay] loop_music` (docs/QOL.md) restarts it at once instead. The CD volume is
   the aux device's (auxSetVolume); the WINMM mixer is still a stub (the audio dialog's CD slider does nothing).
   MM_MCINOTIFY (unused by the game) is delivered at the next MCI call, not through the queue.
   No image or TM2_NOSOUND=1: MCI_OPEN fails as before and the game runs without music.
@@ -113,11 +112,13 @@ What the runtime has shown is missing:
 - **Joysticks** (src/host/input_dinput.c on input_joy.c: SDL game controllers as DirectInput
   joysticks, mapping in input_joy.c; TM2_NOJOY=1 none, TM2_VIRTUAL_PAD=1 + TM2_PAD a scripted
   pad; test tools/rt/test_dinput_joy.c): no hot plug, no force feedback. The game only reads the
-  pad when its saved InputJoystickStatus is 1 (a registry saved without a pad has 2).
+  pad when its saved InputJoystickStatus is 1 (a registry saved without a pad has 2);
+  `[input] controller` (default on, docs/QOL.md) answers 1 while a controller is connected.
 - **Threads** run under one host lock; each has its own frame slice and call chain. The main
   thread's PeekMessageA hands the lock to a waiting game thread (w32_yield): the CD monitor runs.
-- **The network screen** (multi player) makes a pure virtual call (0x004a6a39, from
-  render_set_background 0x004a2ea0 under screen_network 0x0047a18c): an object there never got its
-  derived vtable, most likely because DirectPlay is stubbed. The game's fatal exit ends the run.
+- **The network screen** (multi player) used to end in a pure virtual call (0x004a6a39): the
+  obj_reset_a / obj_reset_b bindings returned 0 where the original leaves EAX = the object, so
+  the background widgets never got their derived vtable (fixed; docs/QOL.md). It now reports no
+  network providers (DirectPlay stubbed) and returns to the title.
 - **0x004b4374 ddraw_release_surfaces** reads an EDX the original leaves undefined (after a COM
   call); the port uses 0.

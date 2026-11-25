@@ -127,8 +127,14 @@ void gpu_tex_prim(TM2Gpu* g, const uint8_t* p, uint8_t code) {
         if (code == 0x74) {
             g->r.u0 = 0;
             g->r.v0 = 0;
+#ifndef GPU_HI
             g->r.du_dx = 0x1000;
             g->r.dv_dy = shl(1, lg + 12);
+#else
+            /* GPU_HI: the record's size is already scaled, a texel spans hi_scale pixels */
+            g->r.du_dx = 0x1000 / g->hi_scale;
+            g->r.dv_dy = shl(1, lg + 12) / g->hi_scale;
+#endif
         } else {
             g->r.u0 = (int32_t)((uint32_t)p[0x10] << 12);
             g->r.v0 = shl(p[0x11], lg + 12);

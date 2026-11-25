@@ -30,11 +30,18 @@
  * ported renderer itself calls (checked by scanning every call rel32 in TM2.EXE), are bound too,
  * with the registers the original's callers load.
  *
+ * Display switches (Roadkill, not the original; src/host/qol/display.h): with display.widescreen
+ * or display.internal_scale on, the calls that draw (frame begin / clear, command_dispatch, the
+ * lines, the pixel bits) go to the renderer's GPU_HI build (host/qol/internal_scale.c) instead of G;
+ * G still runs init, pitch and the viewports, so what the game reads of them is as before.
+ * Both off: every adapter runs exactly as without them.
+ *
  * Port code (not a decompiled function).
  */
 #include "rt_env.h"
 #include "render/gpu.h"
 #include "render/gpu3d.h"
+#include "host/qol/display.h"
 
 #include <stddef.h>
 
@@ -116,6 +123,14 @@ static void sync_out(void)
 
 static void mirror_viewports(void) { memcpy(rt_ptr(VP_BASE), G.vp, sizeof G.vp); }
 
+/* display switches: the inputs sync_in gathered, for the GPU_HI renderer */
+static QolGpuIn qol_in(void)
+{
+    QolGpuIn in = {G.screen, G.screen_bytes, G.pitch, G.pages, G.tex_mem, G.tex_addr, G.tex_size,
+                   L.base, L.count, S3.dither, S3.special};
+    return in;
+}
+
 /* rand() for the noise tables: the game's own rand 0x004899c2, so its state stays the game's */
 static int b_rand(void* user)
 {
@@ -130,6 +145,7 @@ static uint32_t b_gpu_init(const uint32_t* a, int n)
     (void)a; (void)n;
     sync_in();
     gpu_init(&G, 1, b_rand, NULL);
+    if (qol_display_active()) qol_gpu_init(&G.r, G.noise_a, G.noise_b);
     sync_out();
     mirror_viewports();
     return 0;
@@ -148,6 +164,7 @@ static uint32_t b_set_pitch(const uint32_t* a, int n)
 {
     sync_in();
     gpu_set_pitch(&G, (int32_t)rt_arg(a, n, 0));
+    if (qol_display_active()) qol_gpu_set_pitch((int32_t)rt_arg(a, n, 0));
     sync_out();
     return 0;
 }
@@ -159,6 +176,10 @@ static uint32_t b_viewport_setup(const uint32_t* a, int n)
     gpu_viewport_setup(&G, (int)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1), (int32_t)rt_arg(a, n, 2),
                        (int32_t)rt_arg(a, n, 3), (int32_t)rt_arg(a, n, 4), (int32_t)rt_arg(a, n, 5),
                        (int32_t)rt_arg(a, n, 6));
+    if (qol_display_active())
+        qol_gpu_viewport_setup((int)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1), (int32_t)rt_arg(a, n, 2),
+                               (int32_t)rt_arg(a, n, 3), (int32_t)rt_arg(a, n, 4), (int32_t)rt_arg(a, n, 5),
+                               (int32_t)rt_arg(a, n, 6));
     sync_out();
     mirror_viewports();
     return 0;
@@ -169,6 +190,7 @@ static uint32_t b_viewport_select(const uint32_t* a, int n)
 {
     sync_in();
     gpu_viewport_select(&G, (int)rt_arg(a, n, 0));
+    if (qol_display_active()) qol_gpu_viewport_select((int)rt_arg(a, n, 0));
     sync_out();
     return 0;
 }
@@ -176,8 +198,25 @@ static uint32_t b_viewport_select(const uint32_t* a, int n)
 #define NOARG(name, call) \
     static uint32_t name(const uint32_t* a, int n) { (void)a; (void)n; sync_in(); call; sync_out(); return 0; }
 
-NOARG(b_frame_clear, gpu_frame_clear(&G))              /* 0x004ad084 */
-NOARG(b_frame_begin, gpu_frame_begin(&G))              /* 0x004ad848 */
+/* 0x004ad084 / 0x004ad848 (display switches: the GPU_HI renderer) */
+static uint32_t b_frame_clear(const uint32_t* a, int n)
+{
+    (void)a; (void)n;
+    sync_in();
+    if (qol_display_active()) { QolGpuIn in = qol_in(); qol_gpu_frame_begin(&G.r, &in, 1); }
+    else gpu_frame_clear(&G);
+    sync_out();
+    return 0;
+}
+static uint32_t b_frame_begin(const uint32_t* a, int n)
+{
+    (void)a; (void)n;
+    sync_in();
+    if (qol_display_active()) { QolGpuIn in = qol_in(); qol_gpu_frame_begin(&G.r, &in, 0); }
+    else gpu_frame_begin(&G);
+    sync_out();
+    return 0;
+}
 NOARG(b_flat_collect, gpu_flat_collect(&G))            /* 0x004af694 */
 NOARG(b_tex_collect, gpu_tex_collect(&G))              /* 0x004af7e8 */
 NOARG(b_collect_light, gpu3d_collect_light(&G, &S3))   /* 0x004afadc */
@@ -193,7 +232,9 @@ NOARG(b_overlay_mark, gpu3d_overlay_mark(&G, &S3))     /* 0x004b1554 */
 static uint32_t b_command_dispatch(const uint32_t* a, int n)
 {
     sync_in();
-    int r = gpu3d_dispatch_all(&G, &S3, &L, rt_ptr(rt_arg(a, n, 0)));
+    int r;
+    if (qol_display_active()) { QolGpuIn in = qol_in(); r = qol_gpu_dispatch(&G.r, &in, rt_ptr(rt_arg(a, n, 0))); }
+    else r = gpu3d_dispatch_all(&G, &S3, &L, rt_ptr(rt_arg(a, n, 0)));
     sync_out();
     return (uint32_t)r;
 }
@@ -240,10 +281,12 @@ static uint32_t b_edge_setup(const uint32_t* a, int n)
 /* 0x004ad030 / 0x004acfe0 (eax x, edx y) */
 static uint32_t b_pixel_open(const uint32_t* a, int n)
 {
+    if (qol_display_active()) return qol_gpu_pixel_open((int32_t)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1));
     return gpu_pixel_open(&G, (int32_t)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1));
 }
 static uint32_t b_pixel_take(const uint32_t* a, int n)
 {
+    if (qol_display_active()) { qol_gpu_pixel_take((int32_t)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1)); return 0; }
     gpu_pixel_take(&G, (int32_t)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1));
     return 0;
 }
@@ -252,6 +295,13 @@ static uint32_t b_pixel_take(const uint32_t* a, int n)
 static uint32_t b_line(const uint32_t* a, int n)
 {
     sync_in();
+    if (qol_display_active()) {
+        QolGpuIn in = qol_in();
+        qol_gpu_line(&G.r, &in, 0, (int32_t)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1), (int32_t)rt_arg(a, n, 2),
+                     (int32_t)rt_arg(a, n, 3));
+        sync_out();
+        return 0;
+    }
     gpu_line(&G, (int32_t)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1), (int32_t)rt_arg(a, n, 2),
              (int32_t)rt_arg(a, n, 3));
     sync_out();
@@ -260,6 +310,13 @@ static uint32_t b_line(const uint32_t* a, int n)
 static uint32_t b_line_raw(const uint32_t* a, int n)
 {
     sync_in();
+    if (qol_display_active()) {
+        QolGpuIn in = qol_in();
+        qol_gpu_line(&G.r, &in, 1, (int32_t)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1), (int32_t)rt_arg(a, n, 2),
+                     (int32_t)rt_arg(a, n, 3));
+        sync_out();
+        return 0;
+    }
     gpu_line_raw(&G, (int32_t)rt_arg(a, n, 0), (int32_t)rt_arg(a, n, 1), (int32_t)rt_arg(a, n, 2),
                  (int32_t)rt_arg(a, n, 3));
     sync_out();

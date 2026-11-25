@@ -11,6 +11,7 @@
 #define _DARWIN_C_SOURCE
 #define _DEFAULT_SOURCE
 #include "cd_image.h"
+#include "host/settings/settings.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -35,13 +36,12 @@ struct CdImage {
 
 static const char* data_root(void)
 {
-    const char* r = getenv("TM2_DATA");
-    return r && *r ? r : "disc/files";
+    return settings_str("paths.data", "disc/files");   /* settings.h: roadkill.ini, TM2_DATA */
 }
 
 const char* cd_image_default_path(char* out, int cap)
 {
-    const char* e = getenv("TM2_CDIMAGE");
+    const char* e = settings_str("paths.cd_image", NULL);
     if (e && *e) { snprintf(out, (size_t)cap, "%s", e); return out; }
     char dir[1024];
     snprintf(dir, sizeof dir, "%s", data_root());

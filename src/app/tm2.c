@@ -3,13 +3,16 @@
  * space (src/rt/rt.h), binds the ported functions and the host services, and calls WinMain
  * 0x004a8b04 as the Watcom start up does.
  *
- *   tm2 [path to TM2.EXE]     (default disc/files/TM2.EXE)
+ *   tm2 [path to TM2.EXE]     (default TM2.EXE in [paths] data of roadkill.ini / TM2_DATA,
+ *                              else disc/files/TM2.EXE)
  *   TM2_TRACE=1 prints every call.
  */
 #include "rt/rt.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+
+#include "host/settings/settings.h"
 
 /* The Watcom start up runs the init routines of the XI table before WinMain: 6 byte records
  * {type, priority, routine}, from 0x004ea5fc until the first record that does not point into the
@@ -41,7 +44,9 @@ static void run_init_routines(void)
 
 int main(int argc, char** argv)
 {
-    const char* exe = argc > 1 ? argv[1] : "disc/files/TM2.EXE";
+    char def[1100];
+    snprintf(def, sizeof def, "%s/TM2.EXE", settings_str("paths.data", "disc/files"));
+    const char* exe = argc > 1 ? argv[1] : def;
     if (rt_init(exe) != 0) { fprintf(stderr, "tm2: cannot load %s\n", exe); return 1; }
     rt_bind_all();
     run_init_routines();
