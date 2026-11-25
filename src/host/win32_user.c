@@ -22,7 +22,7 @@
  * messages go to the control under the cursor (w32dlg_mouse_target), PeekMessageA repaints.
  *
  * STUBS: menus (no menu bar: LoadMenuA a fake handle, Get/SetMenuItemInfoA fail / succeed doing
- * nothing); accelerators (never translate); MessageBoxA prints to stderr and answers the first
+ * nothing); accelerators (never translate); MessageBoxA shows SDL's native message box (scripted runs answer the first
  * button (Retry / Cancel boxes: Cancel; TM2_MSGBOX=<id> overrides); ClipCursor, FlashWindow,
  * MessageBeep do nothing.
  */
@@ -789,21 +789,46 @@ static uint32_t u_LoadStringA(const uint32_t* a, int n)
     return o;
 }
 
-/* MessageBoxA(hwnd, text, caption, type) */
+/* MessageBoxA(hwnd, text, caption, type): a real modal box (SDL's native message box), with the
+ * buttons of the type and its default button. Scripted runs (TM2_KEYS) and [debug] msgbox answer
+ * at once without showing it, as before. */
 static uint32_t u_MessageBoxA(const uint32_t* a, int n)
 {
-    fprintf(stderr, "tm2: MessageBox [%s] %s\n", W(2) ? w32_str(W(2)) : "", W(1) ? w32_str(W(1)) : "");
+    const char* text = W(1) ? w32_str(W(1)) : "";
+    const char* caption = W(2) ? w32_str(W(2)) : "";
+    uint32_t type = W(3);
+    fprintf(stderr, "tm2: MessageBox [%s] %s\n", caption, text);
     const char* o = settings_str("debug.msgbox", NULL);
     if (o && *o) return (uint32_t)atoi(o);
-    switch (W(3) & 0xf) {
-    case 0: return 1;   /* MB_OK: IDOK */
-    case 1: return 1;   /* MB_OKCANCEL: IDOK */
-    case 2: return 3;   /* MB_ABORTRETRYIGNORE: IDABORT */
-    case 3: return 6;   /* MB_YESNOCANCEL: IDYES */
-    case 4: return 6;   /* MB_YESNO: IDYES */
-    case 5: return 2;   /* MB_RETRYCANCEL: IDCANCEL */
-    default: return 1;
+    static const struct { int n; int ids[3]; const char* names[3]; int auto_answer; } kinds[] = {
+        {1, {1}, {"OK"}, 1},                                            /* MB_OK */
+        {2, {1, 2}, {"OK", "Cancel"}, 1},                               /* MB_OKCANCEL */
+        {3, {3, 4, 5}, {"Abort", "Retry", "Ignore"}, 3},                /* MB_ABORTRETRYIGNORE */
+        {3, {6, 7, 2}, {"Yes", "No", "Cancel"}, 6},                     /* MB_YESNOCANCEL */
+        {2, {6, 7}, {"Yes", "No"}, 6},                                  /* MB_YESNO */
+        {2, {4, 2}, {"Retry", "Cancel"}, 2},                            /* MB_RETRYCANCEL */
+    };
+    unsigned k = type & 0xf;
+    if (k >= sizeof kinds / sizeof kinds[0]) k = 0;
+    if (getenv("TM2_KEYS") || sdl_ok != 1) return (uint32_t)kinds[k].auto_answer;   /* unattended */
+    SDL_MessageBoxButtonData b[3];
+    int def = (int)((type >> 8) & 0xf);   /* MB_DEFBUTTON2 / 3 */
+    for (int i = 0; i < kinds[k].n; i++) {
+        b[i].buttonid = kinds[k].ids[i];
+        b[i].text = kinds[k].names[i];
+        b[i].flags = 0;
+        if (i == def) b[i].flags |= SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+        if (kinds[k].ids[i] == 2 || (kinds[k].ids[i] == 7 && kinds[k].n == 2)) b[i].flags |= SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
     }
+    uint32_t icon = type & 0xf0;
+    SDL_MessageBoxData box = {icon == 0x10 ? SDL_MESSAGEBOX_ERROR : icon == 0x30 ? SDL_MESSAGEBOX_WARNING : SDL_MESSAGEBOX_INFORMATION,
+                              win32_sdl_window(), caption, text, kinds[k].n, b, NULL};
+    int id = kinds[k].auto_answer;
+    w32_block_begin();   /* game threads may run while the box waits */
+    if (SDL_ShowMessageBox(&box, &id) != 0) id = kinds[k].auto_answer;
+    w32_block_end();
+    if (id < 0) id = kinds[k].n > 1 ? kinds[k].ids[kinds[k].n - 1] : 1;   /* closed without a button */
+    return (uint32_t)id;
 }
 static uint32_t u_MessageBeep(const uint32_t* a, int n) { (void)a; (void)n; return 1; }
 static uint32_t u_FlashWindow(const uint32_t* a, int n) { (void)a; (void)n; return 0; }
