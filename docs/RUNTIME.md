@@ -97,18 +97,25 @@ What the runtime has shown is missing:
 - **The x87 trig functions** (level_setup_viewport 0x00493ed0, viewCreate 0x00494610,
   subsys_menu_options 0x0049437c, 0x004b93cc, 0x004b9674): in progress, with host libm at the
   x87 helper boundary.
-- **Host stubs**: dialog boxes (the audio / input config dialogs answer Cancel), GDI drawing,
-  menus, movies, DirectPlay, Direct3D (the game uses its software renderer).
+- **Dialogs and controls** (src/host/dialogs): the system control classes, dialog templates,
+  GDI on the controls' pictures, drawn over the game's frame. The audio and input setup screens
+  work; the template dialogs (105, 106) are written but not yet seen opened by the game.
+- **Host stubs**: menus, DirectPlay, Direct3D (the game uses its software renderer).
 - **CD audio** (src/host/snd_mci.c, cd_audio.c, cd_image.c): the MCI "cdaudio" device plays the
   music tracks straight from the player's CD image (TM2_CDIMAGE, default the .cue in TM2_DATA's
   parent folder, e.g. disc/TWISTEDMETAL2.cue; never copied), mixed into the DirectSound output.
   Open, status, TMSF / MSF / ms time formats, play from / to, pause, resume, stop, seek, close;
   a track that ends stops (mode "stopped") and the game's monitor thread (0x004b902c, polls
   every 3 s) plays it again; `[gameplay] loop_music` (docs/QOL.md) restarts it at once instead. The CD volume is
-  the aux device's (auxSetVolume); the WINMM mixer is still a stub (the audio dialog's CD slider does nothing).
+  the aux device's (auxSetVolume) times the mixer's CD line.
   MM_MCINOTIFY (unused by the game) is delivered at the next MCI call, not through the queue.
   No image or TM2_NOSOUND=1: MCI_OPEN fails as before and the game runs without music.
   TM2_CD_LOG=1 logs the MCI calls and the mixed level once a second.
+- **The mixer** (win32_mm.c, src/host/audio/mixer.c): one WINMM mixer, speakers / wave / CD
+  lines with volume and mute (no bass / treble, so the audio screen shows three sliders). The
+  game's audio screen sets it from its registry (GameVolume) and its sliders; effects play at
+  speakers x wave, the CD at speakers x CD, times roadkill.ini's [audio] volumes.
+  TM2_MIXER_LOG=1 logs each change and the gains.
 - **Joysticks** (src/host/input_dinput.c on input_joy.c: SDL game controllers as DirectInput
   joysticks, mapping in input_joy.c; TM2_NOJOY=1 none, TM2_VIRTUAL_PAD=1 + TM2_PAD a scripted
   pad; test tools/rt/test_dinput_joy.c): no hot plug, no force feedback. The game only reads the

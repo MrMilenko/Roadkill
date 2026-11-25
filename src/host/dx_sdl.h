@@ -67,4 +67,11 @@ void dx_sdl_present(uint32_t px, int w, int h, int pitch);
  * (display.internal_scale, host/qol/display.h: tw x th is a multiple of w x h) */
 void dx_sdl_present_host(const void* pixels, int tw, int th, int pitch, int w, int h);
 
+/* ---- the movie overlay (host/movies/mci_avi.c) ---- */
+/* draws a w x h XRGB picture (pitch bytes) over the game's last frame at x, y scaled to dw x dh
+ * (the game's display coordinates), presents, and keeps drawing it over the game's presents until
+ * dx_sdl_overlay_off() */
+void dx_sdl_overlay(const void* xrgb, int w, int h, int pitch, int x, int y, int dw, int dh);
+void dx_sdl_overlay_off(void);
+
 #endif

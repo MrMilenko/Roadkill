@@ -128,7 +128,7 @@ uint32_t pf2_movie_init(Pf2Env* e);
 uint32_t pf2_movie_set_double_size(Pf2Env* e, uint32_t on);
 uint32_t pf6_movie_set_window(Pf2Env* e, uint32_t a, uint32_t b, uint32_t w, uint32_t h);
 uint32_t pf6_movie_open(Pf2Env* e, uint32_t file, uint32_t a, uint32_t b, uint32_t w, uint32_t h);
-uint32_t pf4_movie_play(Pf2Env* e, uint32_t file, uint32_t edx, uint32_t arg, uint32_t flags);
+uint32_t pf4_movie_play(Pf2Env* e, uint32_t file, uint32_t edx, uint32_t ebx, uint32_t ecx, uint32_t arg, uint32_t flags);
 uint32_t pf2_movie_notify_done(Pf2Env* e, uint32_t a);
 uint32_t pf6_sample_create(Pf2Env* e, uint32_t s, uint32_t h, uint32_t data, uint32_t id);
 uint32_t pf2_sample_stop(Pf2Env* e, uint32_t s);
@@ -3889,7 +3889,7 @@ static uint32_t g_004ba15c(const uint32_t* a, int n)
 {
     (void)a; (void)n;
     Pf2Env e = rt_pf2env();
-    uint32_t r = (uint32_t)pf4_movie_play(&e, rt_arg(a, n, 0), rt_arg(a, n, 1), rt_arg(a, n, 2), rt_arg(a, n, 3));
+    uint32_t r = (uint32_t)pf4_movie_play(&e, rt_arg(a, n, 0), rt_arg(a, n, 1), rt_arg(a, n, 2), rt_arg(a, n, 3), rt_arg(a, n, 4), rt_arg(a, n, 5));
     rt_en2env_done();
     return r;
 }
@@ -4938,7 +4938,7 @@ void rt_bind_gen_t(void)
     rt_bind(0x004b9de0u, g_004b9de0, "pf6_movie_open");
     rt_set_arity(0x004b9de0u, 5);
     rt_bind(0x004ba15cu, g_004ba15c, "pf4_movie_play");
-    rt_set_arity(0x004ba15cu, 4);
+    rt_set_arity(0x004ba15cu, 6);
     rt_bind(0x004ba39cu, g_004ba39c, "pf2_movie_notify_done");
     rt_set_arity(0x004ba39cu, 1);
     rt_bind(0x004ba4ecu, g_004ba4ec, "pf6_sample_create");

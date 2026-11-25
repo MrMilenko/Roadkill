@@ -56,7 +56,7 @@ the Windows registry) go to `registry.txt` next to it. Environment variables ove
 ## Where it stands
 
 From the title screen through the menus into matches, with sound, CD music and controllers, on
-macOS. Known gaps: the game's setup dialogs (audio, input) are not shown yet, there is no network
+macOS. Known gaps: there is no network
 play and no movies, and Windows and Linux builds have not been tried. `docs/RUNTIME.md` lists
 the details.
 

@@ -33,9 +33,10 @@
  *     window's message queue.
  *   Other commands: MCIERR_UNSUPPORTED_FUNCTION; other device ids MCIERR_INVALID_DEVICE_ID.
  *     (Not 0x123: cd_command 0x004b8b40 shows an error box and retries on that one.)
- *   mciSendStringA: "open avivideo" (movie_init 0x004b9bf0) and every other string fail with
- *     MCIERR_INVALID_DEVICE_NAME, so 0x00c8511c (movies usable) stays 0 and movie_play returns at
- *     once. The return string, when asked for, is emptied.
+ *   mciSendStringA: the movies' "avivideo" device answers its strings (host/movies/mci_avi.c:
+ *     "open avivideo", "open <file> alias mov ...", "play mov window notify", ...); every other
+ *     string fails with MCIERR_INVALID_DEVICE_NAME. The return string, when asked for, is
+ *     emptied first.
  *   mciGetErrorStringA: a short text for the codes above.
  * The CD volume (auxSetVolume on the aux device of type AUXCAPS_CDAUDIO) is win32_mm.c's.
  * TM2_CD_LOG=1 logs every MCI command and its answer (and cd_audio.c the mixing).
@@ -47,6 +48,7 @@
 #include "cd_audio.h"
 #include "dx_com.h"
 #include "win32_host.h"
+#include "host/movies/movies.h"
 
 #define MCIERR_INVALID_DEVICE_ID    257u
 #define MCIERR_UNRECOGNIZED_KEYWORD 259u
@@ -340,8 +342,10 @@ static uint32_t imp_mci_send_command(const uint32_t* a, int n)
 
 static uint32_t imp_mci_send_string(const uint32_t* a, int n)
 {
-    uint32_t cmd = dx_arg(a, n, 0), ret = dx_arg(a, n, 1), len = dx_arg(a, n, 2);
+    uint32_t cmd = dx_arg(a, n, 0), ret = dx_arg(a, n, 1), len = dx_arg(a, n, 2), err;
     if (ret && len) rt_w8(ret, 0);
+    /* the movies' "avivideo" device (host/movies/mci_avi.c) */
+    if (cmd && mci_avi_string(w32_str(cmd), ret, len, dx_arg(a, n, 3), &err)) return err;
     char c[64] = "";
     if (cmd) {
         size_t i = 0;
@@ -362,6 +366,10 @@ static uint32_t imp_mci_get_error_string(const uint32_t* a, int n)
                   : err == MCIERR_UNRECOGNIZED_KEYWORD ? "The driver cannot recognize the specified command parameter."
                   : err == MCIERR_BAD_TIME_FORMAT     ? "The specified value for the time format is invalid."
                   : err == MCIERR_HARDWARE            ? "The specified device cannot play the requested data."
+                  : err == 275u                       ? "Cannot find the specified file. Make sure the path and filename are correct."
+                  : err == 261u                       ? "Unknown command."
+                  : err == 289u                       ? "The specified alias is already being used in this application. Use a unique alias."
+                  : err == 348u                       ? "Cannot read the specified file."
                                                       : "Unknown MCI error.";
     if (!buf || !len) return 0;
     uint32_t k = 0;

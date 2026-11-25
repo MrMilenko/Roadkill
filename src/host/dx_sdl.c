@@ -16,6 +16,7 @@
 #include "host/settings/settings.h"
 
 void win32_keys_frame(int frame);   /* win32_keys.c: scripted keys, TM2_SHOT_EVERY */
+void win32_keys_tick(void);
 
 /* the Win32 host's main window (win32_host.h, win32_user.c); this weak stand in answers NULL when
  * that host is not linked in (tools/rt/test_dx.c) */
@@ -144,6 +145,15 @@ void dx_sdl_set_mode(int w, int h, int fullscreen)
     if (S.win && w) fit(w, h);
 }
 
+/* ---- the movie overlay (host/movies/mci_avi.c: MCI avivideo draws its frames over the game's
+ * picture, as MCIAVI's child window does on Windows) ---- */
+static struct { SDL_Texture* tex; int w, h, on; SDL_Rect dst; } O;
+
+static void overlay_draw(SDL_Renderer* r)
+{
+    if (O.on && O.tex) SDL_RenderCopy(r, O.tex, NULL, &O.dst);
+}
+
 /* shows tw x th 16 bit pixels (pitch bytes) as the game's w x h display: the same size but for
  * display.internal_scale (host/qol/display.h), whose picture is larger than the game's */
 static void present_pixels(const void* pixels, int tw, int th, int pitch, int w, int h)
@@ -177,6 +187,7 @@ static void present_pixels(const void* pixels, int tw, int th, int pitch, int w,
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
     SDL_RenderClear(r);
     SDL_RenderCopy(r, S.tex, NULL, NULL);
+    overlay_draw(r);
     w32dlg_overlay(r, 1);
     S.frames++;
     win32_keys_frame(S.frames);   /* scripted keys and TM2_SHOT_EVERY (win32_keys.c) */
@@ -187,6 +198,38 @@ static void present_pixels(const void* pixels, int tw, int th, int pitch, int w,
 }
 
 void dx_sdl_present(uint32_t px, int w, int h, int pitch) { present_pixels(rt_ptr(px), w, h, pitch, w, h); }
+
+void dx_sdl_overlay(const void* xrgb, int w, int h, int pitch, int x, int y, int dw, int dh)
+{
+    init_env();
+    SDL_Renderer* r = dx_sdl_renderer();
+    if (!r || w <= 0 || h <= 0) return;
+    if (!O.tex || O.w != w || O.h != h) {
+        if (O.tex) SDL_DestroyTexture(O.tex);
+        O.tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+        if (!O.tex) { fprintf(stderr, "tm2 host: SDL overlay texture: %s\n", SDL_GetError()); return; }
+        O.w = w;
+        O.h = h;
+    }
+    SDL_UpdateTexture(O.tex, NULL, xrgb, pitch);
+    O.dst = (SDL_Rect){x, y, dw, dh};
+    O.on = 1;
+    /* nothing presented yet (the logo at start): the window at the display's size */
+    int cw, ch;
+    dx_sdl_client_size(&cw, &ch);
+    if (!S.tex && (cw != S.shown_w || ch != S.shown_h)) { fit(cw, ch); SDL_RenderSetLogicalSize(r, cw, ch); }
+    if (S.win && (SDL_GetWindowFlags(S.win) & SDL_WINDOW_HIDDEN)) SDL_ShowWindow(S.win);
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
+    SDL_RenderClear(r);
+    if (S.tex) SDL_RenderCopy(r, S.tex, NULL, NULL);
+    overlay_draw(r);
+    /* not a game frame: the scripted keys' / TM2_SHOT_EVERY's clock runs on by time, as while a
+     * menu waits (win32_keys.c) */
+    win32_keys_tick();
+    SDL_RenderPresent(r);
+}
+
+void dx_sdl_overlay_off(void) { O.on = 0; }
 
 void dx_sdl_present_host(const void* pixels, int tw, int th, int pitch, int w, int h)
 {
@@ -201,6 +244,7 @@ void dx_sdl_redraw(void)
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
     SDL_RenderClear(r);
     SDL_RenderCopy(r, S.tex, NULL, NULL);
+    overlay_draw(r);
     w32dlg_overlay(r, 0);
     SDL_RenderPresent(r);
 }
@@ -208,10 +252,11 @@ void dx_sdl_redraw(void)
 int dx_sdl_screenshot(const char* path)
 {
     SDL_Renderer* r = S.ren;
-    if (!r || !S.tex) return -1;
+    if (!r || (!S.tex && !O.on)) return -1;
     /* re-draw the last frame and read it back at the renderer's output size */
     SDL_RenderClear(r);
-    SDL_RenderCopy(r, S.tex, NULL, NULL);
+    if (S.tex) SDL_RenderCopy(r, S.tex, NULL, NULL);
+    overlay_draw(r);
     w32dlg_overlay(r, 0);
     int ow, oh;
     if (SDL_GetRendererOutputSize(r, &ow, &oh) != 0) return -1;

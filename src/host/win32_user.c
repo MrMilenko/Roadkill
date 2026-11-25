@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include "host/movies/movies.h"
 
 /* ---- classes and windows ---- */
 
@@ -315,8 +316,10 @@ static uint32_t u_WaitMessage(const uint32_t* a, int n)
 {
     (void)a; (void)n;
     if (w32_thread_id() != 1 || sdl_ok != 1) { w32_block_begin(); SDL_Delay(5); w32_block_end(); return 1; }
+    mci_avi_idle();   /* a playing movie (host/movies/mci_avi.c): movie_play 0x004ba15c waits here */
     for (int k = 0; k < 20 && nq == 0; k++) {
         if (SDL_WaitEventTimeout(NULL, 5)) break;
+        mci_avi_idle();
     }
     pump();
     return 1;
@@ -848,7 +851,15 @@ static uint32_t u_GetSystemMetrics(const uint32_t* a, int n)
     default: return 0;                                /* frames, captions, menus: none */
     }
 }
-static uint32_t u_GetSysColor(const uint32_t* a, int n) { return W(0) == 5 ? 0xffffffu : W(0) == 8 ? 0 : 0xc0c0c0u; }
+/* GetSysColor: the Windows 95 standard scheme (COLORREF 0xBBGGRR), the controls draw with it */
+static uint32_t u_GetSysColor(const uint32_t* a, int n)
+{
+    static const uint32_t c[25] = {
+        0xc0c0c0, 0x808000, 0x800000, 0x808080, 0xc0c0c0, 0xffffff, 0x000000, 0x000000, 0x000000, 0xffffff,
+        0xc0c0c0, 0xc0c0c0, 0x808080, 0x800000, 0xffffff, 0xc0c0c0, 0x808080, 0x808080, 0x000000, 0xc0c0c0,
+        0xffffff, 0x000000, 0xdfdfdf, 0x000000, 0xe1ffff};
+    return W(0) < 25 ? c[W(0)] : 0xc0c0c0u;
+}
 
 /* painting on a window: DCs on the controls' pictures (src/host/dialogs); the game's own window
  * gets a DC that only measures (the game draws through DirectDraw) */

@@ -31,6 +31,7 @@ through `src/host/settings/settings.h` (`settings_int` / `settings_str` / `setti
 | `[display] vsync` | 1 | `TM2_VSYNC` | |
 | `[display] widescreen` | 0 | `TM2_WIDESCREEN` | 1 = 16:9 or an aspect (16:10, 21:9): matches show more of the arena left and right, the vertical view unchanged (the horizontal half angle widened in level_setup_viewport); the HUD keeps to the screen edges as the game places it; menus stay 640x480, pillarboxed |
 | `[display] internal_scale` | 1 | `TM2_INTERNAL_SCALE` | 1..4: the software renderer draws at S times 640x480 (a second build of src/render with a larger tile grid, src/engine/render/gpu_hi.h); 3D edges sharper, textures at their original resolution, 2D scaled nearest. With both switches off the original renderer's machine code is unchanged |
+| `[display] skip_movies` | 0 | `TM2_SKIP_MOVIES` | 1 = no movies (the SingleTrac logo, the intro, the endings): the MCI avivideo device reports no driver, as before the movies were added, and the game goes on at once (src/host/movies/mci_avi.c). 0: they play, as the original |
 | `[audio] sound` | 1 | `TM2_NOSOUND=1` is 0 | no effects, no music |
 | `[audio] master_volume`, `effects_volume`, `music_volume` | 100 | `TM2_VOLUME`, `TM2_SFX_VOLUME`, `TM2_MUSIC_VOLUME` | 0..100, on top of the game's own volumes |
 | `[paths] data` | `disc/files` | `TM2_DATA` | the game files (TM2.EXE is loaded from here) |

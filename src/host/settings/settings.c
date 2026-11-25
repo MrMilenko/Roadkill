@@ -48,6 +48,7 @@ static const Key keys[] = {
     {"display.vsync", "TM2_VSYNC", ENV_VALUE, "1", "1: present in step with the display's refresh"},
     {"display.widescreen", "TM2_WIDESCREEN", ENV_VALUE, "0", "1: show more of the arena left and right on wide screens (0: 4:3 as the original)"},
     {"display.internal_scale", "TM2_INTERNAL_SCALE", ENV_VALUE, "1", "the 3D view drawn at this multiple of the game's resolution (1: as the original)"},
+    {"display.skip_movies", "TM2_SKIP_MOVIES", ENV_VALUE, "0", "1: skip the movies (logo, intro, endings) (0: play them as the original)"},
 
     {"audio.sound", "TM2_NOSOUND", ENV_INVERT, "1", "0: no sound at all (no effects, no CD music)"},
     {"audio.master_volume", "TM2_VOLUME", ENV_VALUE, "100", "0..100, applied on top of the game's own volume settings"},

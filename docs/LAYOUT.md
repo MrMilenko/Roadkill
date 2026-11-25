@@ -36,6 +36,7 @@ src/
     directx/      DirectDraw, DirectSound, DirectInput, DirectPlay objects
     audio/        the mixer, SDL audio
     cd/           CD audio from the disc image
+    movies/       the movies: MCI avivideo device, AVI reader (Indeo decoders in third_party/indeo)
     input/        keyboard, controllers, scripted input
     dialogs/      the game's Win32 dialog boxes drawn in game
     settings/     roadkill.ini, the user data folder

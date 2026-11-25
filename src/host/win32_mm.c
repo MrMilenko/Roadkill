@@ -10,11 +10,17 @@
  * auxGetVolume set and read the CD music's gain (cd_audio.c; low word left, high word right,
  * 0..0xffff, linear; 0xffffffff at start). The game's cd_set_volume 0x004b8f48 goes there when
  * its "use aux volume" flag is on.
- * STUBS: no mixers (mixerGetNumDevs 0, the rest MMSYSERR_BADDEVICEID): the audio dialog's
- * speaker / wave / CD sliders do nothing.
+ * Mixer: one device, 0 ("Roadkill Mixer"), as a Windows 95 card shows it: the speakers
+ * destination (line 0xffff0000) with two sources, wave out (0x00000000) and CD audio
+ * (0x00010000), each a volume (MIXERCONTROL_CONTROLTYPE_VOLUME, 0..0xffff per channel) and a mute
+ * control (MIXERCONTROL_CONTROLTYPE_MUTE); control id = line index * 2 (+ 1 for the mute). No
+ * bass / treble: the audio screen then shows its three sliders. The game addresses it by id with
+ * any MIXER_OBJECTF_* (the aux id included, for its CD line search); there is no mixerOpen in
+ * its imports. The levels are host/audio/mixer.c's: they scale the effects and the CD music.
  */
 #include "win32_host.h"
 #include "cd_audio.h"
+#include "host/audio/mixer.h"
 #include "host/settings/settings.h"
 
 #include <SDL.h>
@@ -115,9 +121,7 @@ static uint32_t j_joyGetPosEx(const uint32_t* a, int n)
     return 0;
 }
 
-/* ---- aux: the CD audio line; mixers: none ---- */
-static uint32_t m_zero(const uint32_t* a, int n) { (void)a; (void)n; return 0; }
-static uint32_t m_baddev(const uint32_t* a, int n) { (void)a; (void)n; return 2; }   /* MMSYSERR_BADDEVICEID */
+/* ---- aux: the CD audio line ---- */
 static uint32_t x_auxGetNumDevs(const uint32_t* a, int n) { (void)a; (void)n; return 1; }
 /* auxGetDevCapsA(id, &AUXCAPSA, size): wMid, wPid, version, szPname[32] at 8, wTechnology 0x28,
  * dwSupport 0x2c */
@@ -149,6 +153,163 @@ static uint32_t x_auxSetVolume(const uint32_t* a, int n)
     return 0;
 }
 
+/* ---- the mixer ---- */
+
+#define MIXERR_INVALLINE 1024u
+#define MIXERR_INVALCONTROL 1025u
+#define CT_VOLUME 0x50030001u
+#define CT_MUTE 0x20010002u
+static const struct { uint32_t id, type, flags, target; const char *shrt, *name; } mlines[MIXER_LINES] = {
+    {0xffff0000u, 4, 1, 1, "Volume", "Volume Control"},                 /* DST_SPEAKERS, active, WAVEOUT */
+    {0x00000000u, 0x1008, 0x80000001u, 1, "Wave", "Wave"},              /* SRC_WAVEOUT, source */
+    {0x00010000u, 0x1005, 0x80000001u, 5, "CD", "CD Audio"},            /* SRC_COMPACTDISC, AUX */
+};
+static int mx_log(void) { return settings_bool("debug.mixer_log", 0); }
+
+static uint32_t mx_GetNumDevs(const uint32_t* a, int n) { (void)a; (void)n; return 1; }
+/* mixerGetDevCapsA(id, &MIXERCAPSA, size): wMid, wPid, version, szPname[32] at 8, fdwSupport
+ * 0x28, cDestinations 0x2c */
+static uint32_t mx_GetDevCapsA(const uint32_t* a, int n)
+{
+    if (W(0) != 0) return 2;
+    if (!W(1)) return 11;
+    uint8_t caps[0x30];
+    memset(caps, 0, sizeof caps);
+    caps[0] = 1; caps[2] = 1; caps[4] = 1;
+    memcpy(caps + 8, "Roadkill Mixer", 14);
+    caps[0x2c] = 1;
+    memcpy(rt_ptr(W(1)), caps, W(2) < 0x30 ? W(2) : 0x30);
+    return 0;
+}
+static void put_line(uint32_t ml, int k)
+{
+    rt_w32(ml + 4, 0);                                       /* dwDestination */
+    rt_w32(ml + 8, k ? (uint32_t)(k - 1) : 0);               /* dwSource */
+    rt_w32(ml + 0xc, mlines[k].id);
+    rt_w32(ml + 0x10, mlines[k].flags);
+    rt_w32(ml + 0x14, 0);
+    rt_w32(ml + 0x18, mlines[k].type);
+    rt_w32(ml + 0x1c, 2);                                    /* cChannels */
+    rt_w32(ml + 0x20, k ? 0 : 2);                            /* cConnections */
+    rt_w32(ml + 0x24, 2);                                    /* cControls */
+    memset(rt_ptr(ml + 0x28), 0, 0x80);
+    w32_put_str(ml + 0x28, mlines[k].shrt, 16);
+    w32_put_str(ml + 0x38, mlines[k].name, 64);
+    rt_w32(ml + 0x78, mlines[k].target);                     /* Target.dwType */
+    rt_w32(ml + 0x7c, 0);
+    rt_w16(ml + 0x80, 1);
+    rt_w16(ml + 0x82, 1);
+    rt_w32(ml + 0x84, 0x100);
+    w32_put_str(ml + 0x88, "Roadkill Mixer", 32);
+}
+/* mixerGetLineInfoA(id, &MIXERLINEA, flags) */
+static uint32_t mx_GetLineInfoA(const uint32_t* a, int n)
+{
+    uint32_t ml = W(1), how = W(2) & 0xf;
+    if (W(0) != 0) return 2;
+    if (!ml || rt_r32(ml) < 0xa8) return 11;
+    int k = -1;
+    switch (how) {
+    case 0: if (rt_r32(ml + 4) == 0) k = 0; break;                        /* DESTINATION */
+    case 1: if (rt_r32(ml + 4) == 0 && rt_r32(ml + 8) < 2) k = 1 + (int)rt_r32(ml + 8); break;   /* SOURCE */
+    case 2: for (int i = 0; i < MIXER_LINES; i++) if (mlines[i].id == rt_r32(ml + 0xc)) k = i; break;   /* LINEID */
+    case 3: for (int i = 0; i < MIXER_LINES; i++) if (mlines[i].type == rt_r32(ml + 0x18)) k = i; break;   /* COMPONENTTYPE */
+    default: break;
+    }
+    if (k < 0) return MIXERR_INVALLINE;
+    put_line(ml, k);
+    return 0;
+}
+static void put_control(uint32_t mc, int line, int mute)
+{
+    memset(rt_ptr(mc + 4), 0, 0x90);
+    rt_w32(mc, 0x94);
+    rt_w32(mc + 4, (uint32_t)(line * 2 + mute));
+    rt_w32(mc + 8, mute ? CT_MUTE : CT_VOLUME);
+    rt_w32(mc + 0xc, 0);
+    w32_put_str(mc + 0x14, mute ? "Mute" : "Volume", 16);
+    w32_put_str(mc + 0x24, mute ? "Mute" : "Volume", 64);
+    rt_w32(mc + 0x64, 0);
+    rt_w32(mc + 0x68, mute ? 1 : 0xffff);
+    rt_w32(mc + 0x7c, mute ? 2 : 0xffff);                    /* Metrics.cSteps */
+}
+/* mixerGetLineControlsA(id, &MIXERLINECONTROLSA {cb, line id, control id / type, count, cbmxctrl,
+ * pamxctrl}, flags: ALL 0, ONEBYID 1, ONEBYTYPE 2) */
+static uint32_t mx_GetLineControlsA(const uint32_t* a, int n)
+{
+    uint32_t c = W(1), how = W(2) & 0xf;
+    if (W(0) != 0) return 2;
+    if (!c) return 11;
+    uint32_t arr = rt_r32(c + 0x14);
+    if (how == 1) {
+        uint32_t id = rt_r32(c + 8);
+        if (id >= 2 * MIXER_LINES) return MIXERR_INVALCONTROL;
+        put_control(arr, (int)id / 2, (int)id % 2);
+        rt_w32(c + 4, mlines[id / 2].id);
+        return 0;
+    }
+    int k = -1;
+    for (int i = 0; i < MIXER_LINES; i++) if (mlines[i].id == rt_r32(c + 4)) k = i;
+    if (k < 0) return MIXERR_INVALLINE;
+    if (how == 0) {
+        if (rt_r32(c + 0xc) < 2) return 11;
+        put_control(arr, k, 0);
+        put_control(arr + rt_r32(c + 0x10), k, 1);
+        return 0;
+    }
+    if (how == 2) {
+        uint32_t t = rt_r32(c + 8);
+        if (t != CT_VOLUME && t != CT_MUTE) {
+            static uint32_t told[4];
+            int seen = 0;
+            for (int i = 0; i < 4; i++) if (told[i] == t) seen = 1;
+            for (int i = 0; i < 4 && !seen; i++) if (!told[i]) { told[i] = t; break; }
+            if (mx_log() && !seen) fprintf(stderr, "tm2 mixer: no control of type %08x (bass / treble: not on this mixer; logged once)\n", t);
+            return MIXERR_INVALCONTROL;
+        }
+        put_control(arr, k, t == CT_MUTE);
+        return 0;
+    }
+    return 11;
+}
+/* MIXERCONTROLDETAILS {cb, control id, channels, items, cbDetails, paDetails}: the control, or -1 */
+static int details_control(uint32_t d, uint32_t* ch, uint32_t* pa, uint32_t* cb)
+{
+    uint32_t id = rt_r32(d + 4);
+    if (id >= 2 * MIXER_LINES) return -1;
+    *ch = rt_r32(d + 8);
+    if (*ch < 1) *ch = 1;
+    if (*ch > 2) *ch = 2;
+    *pa = rt_r32(d + 0x14);
+    *cb = rt_r32(d + 0x10) ? rt_r32(d + 0x10) : 4;
+    return (int)id;
+}
+/* mixerGetControlDetailsA(id, &MIXERCONTROLDETAILS, flags: VALUE 0) */
+static uint32_t mx_GetControlDetailsA(const uint32_t* a, int n)
+{
+    uint32_t ch, pa, cb;
+    if (W(0) != 0) return 2;
+    if (!W(1) || (W(2) & 0xf) != 0) return 11;
+    int id = details_control(W(1), &ch, &pa, &cb);
+    if (id < 0) return MIXERR_INVALCONTROL;
+    for (uint32_t c = 0; c < ch; c++)
+        rt_w32(pa + c * cb, id % 2 ? (uint32_t)mixer_muted(id / 2) : mixer_volume(id / 2, (int)c));
+    return 0;
+}
+/* mixerSetControlDetails(id, &MIXERCONTROLDETAILS, flags: VALUE 0); one channel sets both */
+static uint32_t mx_SetControlDetails(const uint32_t* a, int n)
+{
+    uint32_t ch, pa, cb;
+    if (W(0) != 0) return 2;
+    if (!W(1) || (W(2) & 0xf) != 0) return 11;
+    int id = details_control(W(1), &ch, &pa, &cb);
+    if (id < 0) return MIXERR_INVALCONTROL;
+    if (id % 2) { mixer_set_mute(id / 2, rt_r32(pa) != 0); return 0; }
+    uint32_t l = rt_r32(pa), r = ch > 1 ? rt_r32(pa + cb) : l;
+    mixer_set_volume(id / 2, l, r);
+    return 0;
+}
+
 void rt_bind_win32_mm(void)
 {
     rt_bind_import("WINMM.dll!timeGetTime", t_timeGetTime);
@@ -162,12 +323,12 @@ void rt_bind_win32_mm(void)
     rt_bind_import("WINMM.dll!auxGetDevCapsA", x_auxGetDevCapsA);
     rt_bind_import("WINMM.dll!auxGetVolume", x_auxGetVolume);
     rt_bind_import("WINMM.dll!auxSetVolume", x_auxSetVolume);
-    rt_bind_import("WINMM.dll!mixerGetNumDevs", m_zero);
-    rt_bind_import("WINMM.dll!mixerGetDevCapsA", m_baddev);
-    rt_bind_import("WINMM.dll!mixerGetLineInfoA", m_baddev);
-    rt_bind_import("WINMM.dll!mixerGetLineControlsA", m_baddev);
-    rt_bind_import("WINMM.dll!mixerGetControlDetailsA", m_baddev);
-    rt_bind_import("WINMM.dll!mixerSetControlDetails", m_baddev);
+    rt_bind_import("WINMM.dll!mixerGetNumDevs", mx_GetNumDevs);
+    rt_bind_import("WINMM.dll!mixerGetDevCapsA", mx_GetDevCapsA);
+    rt_bind_import("WINMM.dll!mixerGetLineInfoA", mx_GetLineInfoA);
+    rt_bind_import("WINMM.dll!mixerGetLineControlsA", mx_GetLineControlsA);
+    rt_bind_import("WINMM.dll!mixerGetControlDetailsA", mx_GetControlDetailsA);
+    rt_bind_import("WINMM.dll!mixerSetControlDetails", mx_SetControlDetails);
 }
 
 RT_BIND_AREA(win32_mm)

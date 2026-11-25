@@ -21,7 +21,8 @@ int qol_loop_music(void);
  * InputJoystickStatus reads as on (host/win32_reg.c) */
 int qol_controller_default(void);
 
-/* [audio] master_volume x effects_volume / music_volume as a gain 0..256 (256: as the original) */
+/* [audio] master_volume x effects_volume / music_volume as a gain 0..256 (256: as the original),
+ * times the game's own mixer levels (host/audio/mixer.h: speakers x wave / speakers x CD) */
 int qol_effects_gain(void);
 int qol_music_gain(void);
 

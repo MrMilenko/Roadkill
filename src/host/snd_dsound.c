@@ -13,6 +13,7 @@
  *   8 and 16 bit PCM, mono or stereo.
  *   A second stream (the CD audio player, cd_audio.c) adds itself through snd_extra_mix; the
  *   device's open / lock are shared with it (snd_audio_open / snd_audio_lock, cd_audio.h).
+ *   More streams (the movies' audio, host/movies/mci_avi.c) add themselves with snd_mix_add.
  */
 #include <math.h>
 #include <stdio.h>
@@ -78,6 +79,9 @@ static int16_t sample(const Buf* b, uint32_t frame, int ch)
     return (int16_t)(p[0] | p[1] << 8);
 }
 
+#define MAXMIX 4
+static void (*mixers[MAXMIX])(int32_t* acc, int frames);   /* snd_mix_add */
+
 static void mix(void* ud, Uint8* stream, int len)
 {
     (void)ud;
@@ -121,6 +125,7 @@ static void mix(void* ud, Uint8* stream, int len)
         for (int i = 0; i < 2 * frames; i++) { int v = acc[i] < 0 ? -acc[i] : acc[i]; if (v > fx_peak) fx_peak = v; }
     }
     if (snd_extra_mix) snd_extra_mix(acc, frames);
+    for (int k = 0; k < MAXMIX; k++) if (mixers[k]) mixers[k](acc, frames);
     for (int i = 0; i < 2 * frames; i++) out[i] = (int16_t)(acc[i] > 32767 ? 32767 : acc[i] < -32768 ? -32768 : acc[i]);
     if (log_on) {
         for (int i = 0; i < 2 * frames; i++) { int v = out[i] < 0 ? -out[i] : out[i]; if (v > out_peak) out_peak = v; }
@@ -167,6 +172,23 @@ void (*snd_extra_mix)(int32_t* acc, int frames);
 int snd_audio_open(void) { return audio_open(); }
 void snd_audio_lock(void) { lock_audio(); }
 void snd_audio_unlock(void) { unlock_audio(); }
+
+/* another stream called by the mixer like snd_extra_mix (0: added; -1: no room) */
+int snd_mix_add(void (*fn)(int32_t* acc, int frames))
+{
+    int r = -1;
+    lock_audio();
+    for (int k = 0; k < MAXMIX && r; k++) if (mixers[k] == fn) r = 0;
+    for (int k = 0; k < MAXMIX && r; k++) if (!mixers[k]) { mixers[k] = fn; r = 0; }
+    unlock_audio();
+    return r;
+}
+void snd_mix_remove(void (*fn)(int32_t* acc, int frames))
+{
+    lock_audio();
+    for (int k = 0; k < MAXMIX; k++) if (mixers[k] == fn) mixers[k] = NULL;
+    unlock_audio();
+}
 
 static Buf* buf_of(uint32_t a) { DxObj* o = dx_obj_get(a, &I_DSB); return o ? o->host : NULL; }
 
