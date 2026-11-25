@@ -60,6 +60,8 @@ typedef struct Win {
 #define HWND_BASE 0x00030000u
 static Win wins[NWIN];
 static uint32_t focus, active, main_hwnd;
+/* the window each key's press went to: its release goes there too (see pump) */
+static uint32_t key_target[256];
 static int sdl_ok = -1;
 
 static Win* win(uint32_t h)
@@ -233,7 +235,15 @@ static void pump(void)
             if (up) lp |= 3u << 30;
             uint32_t m = up ? 0x101 : 0x100;
             if (alt || vk == 0x12 || vk == 0x79) m += 4;   /* WM_SYSKEYDOWN / UP: Alt, F10 */
-            post(1, focus ? focus : hwnd_of_sdl(ev.key.windowID), m, vk, lp);
+            /* a release goes to the window its press went to while that window lives. The game
+             * can move the focus between the two (Enter in Options opens Input Config, whose
+             * create_widgets 0x0045f3b4 focuses ACCEPT, and that button clicks on WM_KEYUP
+             * VK_RETURN, 0x004a4504): the 1997 machines built the screen slower than a key is
+             * tapped, so the release was read while the old window had the focus */
+            uint32_t to = focus ? focus : hwnd_of_sdl(ev.key.windowID);
+            if (up && key_target[vk & 0xff] && win(key_target[vk & 0xff])) to = key_target[vk & 0xff];
+            key_target[vk & 0xff] = up ? 0 : to;
+            post(1, to, m, vk, lp);
             break;
         }
         case SDL_MOUSEMOTION: {
@@ -470,6 +480,7 @@ static uint32_t u_DestroyWindow(const uint32_t* a, int n)
     if (w->sdl) SDL_DestroyWindow(w->sdl);
     w->alive = 0;
     if (focus == h) focus = 0;
+    for (int i = 0; i < 256; i++) if (key_target[i] == h) key_target[i] = 0;
     if (active == h) active = 0;
     if (main_hwnd == h) main_hwnd = 0;
     return 1;

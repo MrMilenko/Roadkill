@@ -130,7 +130,12 @@ static void schedule(int frame)
 
 void win32_keys_frame(int frame)
 {
+    /* the count never steps back: after a wait the clock ran ahead of the presents, and a step
+     * back would hold a scripted key down until the clock got there again (seconds) */
+    static int ahead;
     parse();
+    if (last_ms && frame + ahead < vframe()) ahead = vframe() - frame;
+    frame += ahead;
     last_frame = frame;
     last_ms = SDL_GetTicks();
     schedule(frame);
