@@ -1,6 +1,6 @@
 /build/
 /build-*/
-/disc/
+/disc
 .DS_Store
 *.bmp
 shots/
