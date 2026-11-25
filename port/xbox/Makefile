@@ -31,7 +31,7 @@ SRCS += $(SDL2X_SRC_LIST)
 # C99, the Xbox pieces first on the include path.
 RK_FLAGS = -std=gnu99 -Xclang -fdefault-calling-conv=cdecl -ffp-contract=off \
            -DROADKILL_XBOX=1 -DROADKILL_NO_TLS=1 \
-           -I$(CURDIR)/compat -I$(ROADKILL)/src -I$(ROADKILL)/src/rt -I$(ROADKILL)/third_party/indeo \
+           -I$(CURDIR)/compat -I$(ROADKILL)/src -I$(ROADKILL)/src/rt -I$(ROADKILL)/third_party/indeo -I$(ROADKILL)/third_party/dr_libs \
            -include $(CURDIR)/compat/rk_xbox.h \
            -Wno-microsoft-anon-tag -Wno-unused-parameter -Wno-incompatible-pointer-types-discards-qualifiers
 CFLAGS   += $(SDL2X_DEFINES) $(SDL2X_INCLUDES)
@@ -49,7 +49,7 @@ RK_OBJS := $(foreach s,$(filter $(ROADKILL)/src/% $(ROADKILL)/third_party/% $(CU
 $(RK_OBJS): CFLAGS += $(RK_FLAGS)
 $(RK_OBJS): OXDK_CFLAGS := -I$(CURDIR)/compat $(OXDK_CFLAGS)
 $(call oxdk_obj,$(ROADKILL)/src/app/tm2.c): CFLAGS += -Dmain=roadkill_main
-$(call oxdk_obj,$(ROADKILL)/third_party/indeo/indeo3.c) $(call oxdk_obj,$(ROADKILL)/third_party/indeo/indeo4.c) \
+$(call oxdk_obj,$(ROADKILL)/src/host/cd_music.c) $(call oxdk_obj,$(ROADKILL)/third_party/indeo/indeo3.c) $(call oxdk_obj,$(ROADKILL)/third_party/indeo/indeo4.c) \
 $(call oxdk_obj,$(ROADKILL)/third_party/indeo/ivi.c) $(call oxdk_obj,$(ROADKILL)/third_party/indeo/ivi_dsp.c): CFLAGS += -w
 $(foreach f,en10_viewport en10_view en10_dsound,$(call oxdk_obj,$(ROADKILL)/src/engine/$(f).c)): CFLAGS += -fno-builtin
 

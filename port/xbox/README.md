@@ -16,7 +16,8 @@ switches. This folder adds what the desktop gets from its C library and OS:
 | `xbox_main.c` | the entry point, `D:\roadkill.log`, the pad as arrow keys / Enter / Esc in the menus |
 
 Install: the XBE in a folder on the hard disk with `data\` beside it holding everything from the
-Twisted Metal 2 PC CD (and the CD image's `.cue` / `.bin` for the music). Settings and the log go
+Twisted Metal 2 PC CD, and for the music `data\music\` from `scripts/convert_music.py` (or the CD
+image's `.cue` / `.bin`, ten times the size). Settings and the log go
 next to the XBE.
 
 Status: a first test build. The game draws through Roadkill's DirectDraw host into an SDL texture

@@ -18,6 +18,7 @@ cp "$exe" "$dir/"
 cp packaging/DATA_README.txt "$dir/data/PUT_YOUR_GAME_FILES_HERE.txt"
 cp packaging/README.txt "$dir/README.txt"
 cp LICENSE "$dir/LICENSE.txt"
+cp scripts/convert_music.py "$dir/"
 {
     echo "Roadkill $version includes:"
     echo
@@ -32,6 +33,10 @@ cp LICENSE "$dir/LICENSE.txt"
     echo "listed: https://github.com/MrMilenko/Roadkill/tree/main/third_party/indeo"
     echo
     cat third_party/indeo/LICENSE
+    echo
+    echo "------------------------------------------------------------------------"
+    echo "dr_mp3 v0.7.4 and dr_flac v0.13.4 (https://github.com/mackron/dr_libs),"
+    echo "public domain (Unlicense) or MIT No Attribution."
 } > "$dir/THIRD_PARTY.txt"
 case "$name" in
     windows*) for f in "$dir"/*.txt "$dir"/data/*.txt; do sed -i.bak 's/$/\r/' "$f" && rm "$f.bak"; done ;;

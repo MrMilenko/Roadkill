@@ -43,7 +43,9 @@ set_source_files_properties(third_party/indeo/indeo3.c third_party/indeo/indeo4.
     third_party/indeo/ivi_dsp.c PROPERTIES COMPILE_OPTIONS "-w")
 
 add_executable(roadkill src/app/tm2.c ${ROADKILL_GAME})
-target_include_directories(roadkill PRIVATE src src/rt)
+target_include_directories(roadkill PRIVATE src src/rt third_party/dr_libs)
+# the CD music decoders (third_party/dr_libs, public domain / MIT-0) build without warnings shown
+set_source_files_properties(src/host/cd_music.c PROPERTIES COMPILE_OPTIONS "-w")
 target_link_libraries(roadkill PRIVATE indeo ${ROADKILL_SDL} Threads::Threads m)
 if(MINGW)
     # one roadkill.exe beside SDL2.dll: the C runtime pieces (winpthread, libgcc) linked in
@@ -76,7 +78,7 @@ option(ROADKILL_VIEWER "Build the arena viewer (tm2view)" OFF)
 if(ROADKILL_VIEWER)
     find_package(OpenGL REQUIRED)
     add_library(roadkill_game STATIC ${ROADKILL_GAME})
-    target_include_directories(roadkill_game PUBLIC src src/rt)
+    target_include_directories(roadkill_game PUBLIC src src/rt third_party/dr_libs)
     target_link_libraries(roadkill_game PUBLIC indeo)
     target_compile_options(roadkill_game PRIVATE -ffp-contract=off)
     add_executable(tm2view src/app/viewer.c)

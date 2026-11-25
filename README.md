@@ -27,14 +27,17 @@ program, an empty `data` folder and a `README.txt`.
    `TM2.EXE` must end up directly in `data` (with `SINTAB.DAT` and the folders `CARSDB`,
    `LEVELDB`, `MOVIES`, `SHELLDB1` and the rest beside it). Upper or lower case names both work.
 2. **Music (optional):** the music is CD audio, so it is not in those files. Put a `.cue` / `.bin`
-   image of the CD in `data` too.
+   image of the CD in `data` too, or convert its music to MP3 (or FLAC) with
+   `python3 scripts/convert_music.py "Twisted Metal 2.cue"` (needs ffmpeg) and put the `music`
+   folder it makes in `data`: about 45 MB in place of the 700 MB image, the tracks laid out where
+   they are on the disc.
 3. Start `roadkill` (`roadkill.exe` on Windows). If it can't find the files, it says which folder
    it looked in.
 
 Roadkill looks for `TM2.EXE` in this order: `[paths] data` in `roadkill.ini` (or `TM2_DATA`);
 `data/` next to the program; `data/` in your settings folder (below); `disc/files/` in the
-folder it starts in (a source checkout). The music: the first `.cue` in that folder, else in
-its parent (`disc/` in a checkout), or `[paths] cd_image`.
+folder it starts in (a source checkout). The music: `[paths] cd_image`, else `music/music.cue`
+in that folder, else the first `.cue` in it, else in its parent (`disc/` in a checkout).
 
 macOS: the builds aren't notarized, so the first start needs right-click > Open (or System
 Settings > Privacy & Security > Open Anyway).

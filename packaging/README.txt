@@ -10,7 +10,9 @@ SETTING UP
 1. Copy everything from your Twisted Metal 2 PC CD into the "data"
    folder next to Roadkill. TM2.EXE must end up directly in "data".
    ("data/PUT_YOUR_GAME_FILES_HERE.txt" explains it step by step.)
-2. Music (optional): put a .cue / .bin image of the CD in "data" too.
+2. Music (optional): put a .cue / .bin image of the CD in "data" too, or
+   convert its music to MP3s with convert_music.py (see the note in
+   "data") and put the "music" folder it makes in "data".
 3. Start Roadkill:
      Windows  double-click roadkill.exe
      macOS    double-click roadkill, or run ./roadkill in Terminal
@@ -52,7 +54,8 @@ title screen.
 LICENSE
 -------
 Roadkill is GPL-3.0-or-later (LICENSE.txt). It includes SDL 2 (zlib
-license) and FFmpeg's Indeo video decoders (LGPL-2.1-or-later); see
+license), FFmpeg's Indeo video decoders (LGPL-2.1-or-later) and dr_mp3 /
+dr_flac (public domain); see
 THIRD_PARTY.txt. Source: https://github.com/MrMilenko/Roadkill
 Twisted Metal is a trademark of Sony Interactive Entertainment. Roadkill
 is not affiliated with or endorsed by Sony.

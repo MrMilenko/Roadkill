@@ -7,11 +7,17 @@
  * and is not counted. The files follow each other on the disc: a file's first sector is the LBA
  * after the previous file's last. A track ends where the next one's INDEX 00 (or 01) starts, the
  * last one at the end of its file.
+ *
+ * Roadkill's converted music (scripts/convert_music.py writes music/music.cue): a FILE may also be
+ * "x.mp3" MP3 or "x.flac" FLAC (cd_music.c decodes it), or "" NONE (no file: sectors of silence,
+ * the data track's place); "REM SECTORS n" after a FILE line gives its length in sectors (a
+ * NONE file needs it; a compressed one is measured when it's missing).
  */
 #define _DARWIN_C_SOURCE
 #define _DEFAULT_SOURCE
 #include "host/data/data_dir.h"
 #include "cd_image.h"
+#include "cd_music.h"
 #include "host/settings/settings.h"
 
 #include <ctype.h>
@@ -23,7 +29,7 @@
 
 #define MAX_FILES 100
 
-typedef struct { FILE* f; uint32_t base, sectors; } CdFile;
+typedef struct { FILE* f; CdMusic* music; uint32_t base, sectors; } CdFile;
 typedef struct { int audio, file; uint32_t idx0, idx1; int has0; } CdTrack;
 
 struct CdImage {
@@ -62,8 +68,11 @@ const char* cd_image_default_path(char* out, int cap)
 {
     const char* e = settings_str("paths.cd_image", NULL);
     if (e && *e) { snprintf(out, (size_t)cap, "%s", e); return out; }
-    /* the data folder itself, then its parent (a source checkout keeps the image in disc/) */
+    /* converted music (data/music/music.cue), the data folder itself, then its parent (a source
+     * checkout keeps the image in disc/) */
     char dir[1024];
+    snprintf(dir, sizeof dir, "%s/music", data_root());
+    if (first_cue(dir, out, cap)) return out;
     snprintf(dir, sizeof dir, "%s", data_root());
     if (first_cue(dir, out, cap)) return out;
     size_t l = strlen(dir);
@@ -131,15 +140,31 @@ CdImage* cd_image_open(const char* cue, const char** why)
             if (*p == '"') { p++; while (*p && *p != '"' && k + 1 < sizeof name) name[k++] = *p++; }
             else while (*p && !isspace((unsigned char)*p) && k + 1 < sizeof name) name[k++] = *p++;
             name[k] = 0;
+            if (*p == '"') p++;
+            while (isspace((unsigned char)*p)) p++;
+            char type[16];
+            k = 0;
+            while (*p && !isspace((unsigned char)*p) && k + 1 < sizeof type) type[k++] = *p++;
+            type[k] = 0;
             if (c->nfiles == MAX_FILES) { *why = "too many FILE lines"; break; }
             CdFile* f = &c->files[c->nfiles];
-            f->f = open_in(dir, name);
-            if (!f->f) { *why = "cannot open a FILE of the .cue"; break; }
+            f->base = c->nfiles ? c->files[c->nfiles - 1].base + c->files[c->nfiles - 1].sectors : 0;
+            c->nfiles++;
+            if (!strcasecmp(type, "NONE")) continue;   /* sectors from REM SECTORS */
+            FILE* h = open_in(dir, name);
+            if (!h) { *why = "cannot open a FILE of the .cue"; break; }
+            if (cd_music_kind(name, type)) {
+                f->music = cd_music_open(h, name, type);
+                if (!f->music) { *why = "a music FILE of the .cue can't be decoded (44.1 kHz stereo MP3 / FLAC)"; break; }
+                f->sectors = cd_music_sectors(f->music);
+                continue;
+            }
+            f->f = h;
             fseek(f->f, 0, SEEK_END);
             long sz = ftell(f->f);
             f->sectors = sz > 0 ? (uint32_t)(sz / CD_SECTOR_BYTES) : 0;
-            f->base = c->nfiles ? c->files[c->nfiles - 1].base + c->files[c->nfiles - 1].sectors : 0;
-            c->nfiles++;
+        } else if (strncasecmp(p, "REM SECTORS", 11) == 0 && c->nfiles) {
+            c->files[c->nfiles - 1].sectors = (uint32_t)strtoul(p + 11, NULL, 10);
         } else if (strncasecmp(p, "TRACK", 5) == 0 && isspace((unsigned char)p[5])) {
             int no = atoi(p + 6);
             if (!c->nfiles) { *why = "TRACK before FILE"; break; }
@@ -169,7 +194,10 @@ CdImage* cd_image_open(const char* cue, const char** why)
 void cd_image_close(CdImage* c)
 {
     if (!c) return;
-    for (int i = 0; i < c->nfiles; i++) if (c->files[i].f) fclose(c->files[i].f);
+    for (int i = 0; i < c->nfiles; i++) {
+        if (c->files[i].f) fclose(c->files[i].f);
+        cd_music_close(c->files[i].music);
+    }
     free(c);
 }
 
@@ -222,6 +250,16 @@ int cd_image_read(CdImage* c, uint32_t lba, int n, int16_t* out)
             if (te > lba && (uint32_t)k > te - lba) k = (int)(te - lba);
         }
         if (k < 1) k = 1;
+        if (f->music) {
+            uint32_t fr = cd_music_read(f->music, (uint64_t)(lba - f->base) * CD_SECTOR_FRAMES,
+                                        (uint32_t)k * CD_SECTOR_FRAMES, out);
+            got += (int)((fr + CD_SECTOR_FRAMES - 1) / CD_SECTOR_FRAMES);
+            lba += (uint32_t)k;
+            n -= k;
+            out += (size_t)k * CD_SECTOR_FRAMES * 2;
+            continue;
+        }
+        if (!f->f) { lba += (uint32_t)k; n -= k; out += (size_t)k * CD_SECTOR_FRAMES * 2; continue; }
         size_t rd = 0;
         if (fseek(f->f, (long)(lba - f->base) * CD_SECTOR_BYTES, SEEK_SET) == 0)
             rd = fread(c->buf, CD_SECTOR_BYTES, (size_t)k, f->f);
