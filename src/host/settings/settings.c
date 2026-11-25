@@ -16,6 +16,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include "host/os/os.h"
 #ifdef _WIN32
 #include <direct.h>
 #define mkdir_one(p) _mkdir(p)
@@ -55,8 +56,8 @@ static const Key keys[] = {
     {"audio.effects_volume", "TM2_SFX_VOLUME", ENV_VALUE, "100", "0..100, the sound effects"},
     {"audio.music_volume", "TM2_MUSIC_VOLUME", ENV_VALUE, "100", "0..100, the CD music"},
 
-    {"paths.data", "TM2_DATA", ENV_VALUE, "disc/files", "the folder with the game's files (TM2.EXE, SINTAB.DAT, ...), relative to the folder Roadkill starts in, or absolute"},
-    {"paths.cd_image", "TM2_CDIMAGE", ENV_VALUE, "", "the disc image's .cue for the music (empty: the first .cue in the data folder's parent)"},
+    {"paths.data", "TM2_DATA", ENV_VALUE, "", "the folder with the game's files (TM2.EXE, SINTAB.DAT, ...). Empty: data/ beside Roadkill, else data/ in this folder"},
+    {"paths.cd_image", "TM2_CDIMAGE", ENV_VALUE, "", "the disc image's .cue for the music (empty: the first .cue in the data folder, else its parent)"},
     {"paths.registry", "TM2_REGISTRY", ENV_VALUE, "", "the file with the game's saved settings (empty: registry.txt in this folder)"},
 
     {"input.controller", "TM2_NOJOY", ENV_INVERT, "1", "1: game controllers work as joysticks, and the game uses a connected one without a visit to its input screen first\n; 0: no controllers"},
@@ -139,13 +140,14 @@ static void make_dirs(const char* path)
 
 static void find_dir(void)
 {
-    const char* h = getenv("HOME");
 #if defined(_WIN32)
     const char* a = getenv("APPDATA");
     snprintf(dir, sizeof dir, "%s\\Roadkill", a && *a ? a : ".");
 #elif defined(__APPLE__)
+    const char* h = getenv("HOME");
     snprintf(dir, sizeof dir, "%s/Library/Application Support/Roadkill", h && *h ? h : ".");
 #else
+    const char* h = getenv("HOME");
     const char* x = getenv("XDG_DATA_HOME");
     if (x && *x) snprintf(dir, sizeof dir, "%s/roadkill", x);
     else snprintf(dir, sizeof dir, "%s/.local/share/roadkill", h && *h ? h : ".");
@@ -224,8 +226,6 @@ static void load(void)
     if (in) fclose(in);
     /* the game data folder is also read by runtime code outside the host (src/rt's data
      * checks): hand a file setting on through the variable they read */
-    const char* d = file_value("paths.data");
-    if (d && *d && !(getenv("TM2_DATA") && *getenv("TM2_DATA"))) setenv("TM2_DATA", d, 1);
 }
 
 static void init(void) { pthread_once(&once, load); }

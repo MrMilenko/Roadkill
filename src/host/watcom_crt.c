@@ -29,6 +29,7 @@
 #include "win32_host.h"
 
 #include <pthread.h>
+#include "host/os/os.h"
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,27 +37,24 @@
 
 /* ---- setjmp / longjmp ---- */
 
+#ifdef _WIN32
+/* MinGW's longjmp unwinds through SEH frames, which the stack copy below confuses: GCC's builtins
+ * only restore the registers, as _setjmp / _longjmp do on macOS and Linux */
+static void* host_jb[5];
+#define HOST_SETJMP(b) __builtin_setjmp(b)
+#define HOST_LONGJMP(b) __builtin_longjmp((b), 1)
+#else
 static jmp_buf host_jb;
+#define HOST_SETJMP(b) _setjmp(b)
+#define HOST_LONGJMP(b) _longjmp((b), 1)
+#endif
 static int armed;
 static uint32_t jb_game, frame_top, jmp_value;
 static char* save_lo;
 static size_t save_n;
 static char* save_buf;
 
-static char* stack_top(void)
-{
-#ifdef __APPLE__
-    return (char*)pthread_get_stackaddr_np(pthread_self());
-#else
-    pthread_attr_t at;
-    void* base;
-    size_t size;
-    pthread_getattr_np(pthread_self(), &at);
-    pthread_attr_getstack(&at, &base, &size);
-    pthread_attr_destroy(&at);
-    return (char*)base + size;
-#endif
-}
+static char* stack_top(void) { return os_stack_top(); }
 
 static __attribute__((noinline)) uint32_t c_setjmp(const uint32_t* a, int n)
 {
@@ -64,11 +62,11 @@ static __attribute__((noinline)) uint32_t c_setjmp(const uint32_t* a, int n)
     char probe[16];
     jb_game = W(0);
     frame_top = rt_frame_push(0);
-    save_lo = (char*)((uintptr_t)(probe - 512) & ~(uintptr_t)15);
+    save_lo = (char*)(((uintptr_t)probe - 512) & ~(uintptr_t)15);
     save_n = (size_t)(stack_top() - save_lo);
     free(save_buf);
     save_buf = malloc(save_n);
-    if (_setjmp(host_jb) == 0) {
+    if (HOST_SETJMP(host_jb) == 0) {
         /* the copy is taken after _setjmp, so it holds this frame as it is now */
         memcpy(save_buf, save_lo, save_n);
         armed = 1;
@@ -83,13 +81,13 @@ static __attribute__((noinline)) uint32_t c_setjmp(const uint32_t* a, int n)
 static __attribute__((noinline, noreturn)) void do_jump(void)
 {
     memcpy(save_lo, save_buf, save_n);
-    _longjmp(host_jb, 1);
+    HOST_LONGJMP(host_jb);
 }
 static __attribute__((noinline, noreturn)) void descend(void)
 {
     volatile char pad[4096];
     pad[0] = 0;
-    if ((char*)pad + sizeof pad + 1024 > save_lo) descend();
+    if ((uintptr_t)pad + sizeof pad + 1024 > (uintptr_t)save_lo) descend();
     do_jump();
 }
 

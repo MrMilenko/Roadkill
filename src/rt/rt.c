@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/mman.h>
+#include "host/os/os.h"
 
 uint8_t* rt_base;
 
@@ -47,8 +47,8 @@ static uint16_t rd16(const uint8_t* p) { return (uint16_t)(p[0] | p[1] << 8); }
 
 int rt_init(const char* exe_path)
 {
-    rt_base = mmap(NULL, RT_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-    if (rt_base == MAP_FAILED) { rt_base = NULL; return -1; }
+    rt_base = os_reserve(RT_SIZE);
+    if (!rt_base) return -1;
     FILE* f = fopen(exe_path, "rb");
     if (!f) { fprintf(stderr, "tm2: cannot open %s\n", exe_path); return -1; }
     fseek(f, 0, SEEK_END);
@@ -127,7 +127,7 @@ void rt_bind_import(const char* name, RtFn fn)
 
 void rt_shutdown(void)
 {
-    if (rt_base) munmap(rt_base, RT_SIZE);
+    if (rt_base) os_release(rt_base, RT_SIZE);
     rt_base = NULL;
 }
 

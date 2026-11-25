@@ -10,6 +10,7 @@
  */
 #define _DARWIN_C_SOURCE
 #define _DEFAULT_SOURCE
+#include "host/data/data_dir.h"
 #include "cd_image.h"
 #include "host/settings/settings.h"
 
@@ -36,21 +37,12 @@ struct CdImage {
 
 static const char* data_root(void)
 {
-    return settings_str("paths.data", "disc/files");   /* settings.h: roadkill.ini, TM2_DATA */
+    return data_dir();   /* host/data/data_dir.h */
 }
 
-const char* cd_image_default_path(char* out, int cap)
+/* the first .cue (by name) in dir, into out; NULL when there is none */
+static const char* first_cue(const char* dir, char* out, int cap)
 {
-    const char* e = settings_str("paths.cd_image", NULL);
-    if (e && *e) { snprintf(out, (size_t)cap, "%s", e); return out; }
-    char dir[1024];
-    snprintf(dir, sizeof dir, "%s", data_root());
-    size_t l = strlen(dir);
-    while (l > 1 && dir[l - 1] == '/') dir[--l] = 0;
-    char* s = strrchr(dir, '/');
-    if (s && s != dir) *s = 0;
-    else if (s) s[1] = 0;
-    else snprintf(dir, sizeof dir, ".");
     DIR* d = opendir(dir);
     if (!d) return NULL;
     struct dirent* de;
@@ -64,6 +56,25 @@ const char* cd_image_default_path(char* out, int cap)
     if (!best[0]) return NULL;
     snprintf(out, (size_t)cap, "%s/%s", dir, best);
     return out;
+}
+
+const char* cd_image_default_path(char* out, int cap)
+{
+    const char* e = settings_str("paths.cd_image", NULL);
+    if (e && *e) { snprintf(out, (size_t)cap, "%s", e); return out; }
+    /* the data folder itself, then its parent (a source checkout keeps the image in disc/) */
+    char dir[1024];
+    snprintf(dir, sizeof dir, "%s", data_root());
+    if (first_cue(dir, out, cap)) return out;
+    size_t l = strlen(dir);
+    while (l > 1 && (dir[l - 1] == '/' || dir[l - 1] == '\\')) dir[--l] = 0;
+    char* s = strrchr(dir, '/');
+    char* bs = strrchr(dir, '\\');
+    if (bs && (!s || bs > s)) s = bs;
+    if (s && s != dir) *s = 0;
+    else if (s) s[1] = 0;
+    else snprintf(dir, sizeof dir, ".");
+    return first_cue(dir, out, cap);
 }
 
 /* open dir/name, or a name in dir that matches it case insensitively */

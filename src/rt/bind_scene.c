@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "host/win32_host.h"
 #include "math/tm2math.h"
 #include "scene/car_collide.h"
 #include "scene/dpc_collide.h"
@@ -23,12 +24,10 @@ static void math_tables(void)
 {
     static int loaded;
     if (!loaded) {
-        const char* dir = getenv("TM2_DATA");
-        char s[1024], x[1024];
-        if (!dir || !*dir) dir = "disc/files";
-        snprintf(s, sizeof s, "%s/SINTAB.DAT", dir);
-        snprintf(x, sizeof x, "%s/TM2.EXE", dir);
-        if (tm2_math_load_tables(s, x) != 0) rt_stop("math tables (set TM2_DATA to the game's files)", 0);
+        char s[1024], x[1024];   /* in the data folder, any letter case (host/data/data_dir.h) */
+        w32_host_path("SINTAB.DAT", s, sizeof s);
+        w32_host_path("TM2.EXE", x, sizeof x);
+        if (tm2_math_load_tables(s, x) != 0) rt_stop("math tables: SINTAB.DAT / TM2.EXE in the game's data folder", 0);
         loaded = 1;
     }
 }

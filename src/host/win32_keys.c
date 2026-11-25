@@ -27,6 +27,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include "host/os/os.h"
 
 typedef struct { int frame, hold; SDL_Scancode sc; int state; int down_frame; } Press;   /* state 0 wait, 1 down, 2 done */
 static Press presses[256];
@@ -70,7 +71,7 @@ static void parse(void)
     if (settings_int("debug.shot_every", 0) > 0) {
         shot_every = settings_int("debug.shot_every", 0);
         snprintf(shot_dir, sizeof shot_dir, "%s", settings_str("debug.shot_dir", "shots"));
-        mkdir(shot_dir, 0755);
+        os_mkdir(shot_dir);
     }
 }
 

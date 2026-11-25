@@ -13,6 +13,8 @@
 #include <stdlib.h>
 
 #include "host/settings/settings.h"
+#include "host/data/data_dir.h"
+#include "host/win32_host.h"
 
 /* The Watcom start up runs the init routines of the XI table before WinMain: 6 byte records
  * {type, priority, routine}, from 0x004ea5fc until the first record that does not point into the
@@ -45,7 +47,8 @@ static void run_init_routines(void)
 int main(int argc, char** argv)
 {
     char def[1100];
-    snprintf(def, sizeof def, "%s/TM2.EXE", settings_str("paths.data", "disc/files"));
+    if (argc < 2 && !data_dir_found()) { data_dir_explain(); return 1; }
+    w32_host_path("TM2.EXE", def, sizeof def);   /* in data_dir(), any letter case */
     const char* exe = argc > 1 ? argv[1] : def;
     if (rt_init(exe) != 0) { fprintf(stderr, "tm2: cannot load %s\n", exe); return 1; }
     rt_bind_all();

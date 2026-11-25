@@ -36,6 +36,8 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include "host/os/os.h"
+#include "host/data/data_dir.h"
 
 uint32_t w32_last_error;
 
@@ -86,7 +88,7 @@ void w32_handle_free(uint32_t h) { int i = hidx(h); if (i > 0) { handles[i].type
 
 const char* w32_data_root(void)
 {
-    return settings_str("paths.data", "disc/files");   /* settings.h: roadkill.ini, TM2_DATA */
+    return data_dir();   /* host/data/data_dir.h */
 }
 char w32_cd_letter(void)
 {
@@ -409,7 +411,7 @@ static uint32_t k_CreateFileA(const uint32_t* a, int n)
     case 4: fl |= O_CREAT; break;             /* OPEN_ALWAYS */
     case 5: fl |= O_TRUNC; break;             /* TRUNCATE_EXISTING */
     }
-    int fd = open(path, fl, 0644);
+    int fd = open(path, fl | O_BINARY, 0644);
     if (settings_bool("debug.trace_files", 0)) fprintf(stderr, "tm2: CreateFileA %s -> %s %s\n", name, path, fd < 0 ? "FAILED" : "ok");
     if (fd < 0) { w32_last_error = errno == ENOENT ? 2u : 5u; return 0xffffffffu; }
     struct stat st;

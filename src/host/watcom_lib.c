@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "host/os/os.h"
 
 /* a COM method of obj: vtable slot off, the stdcall words after the object */
 static uint32_t com3(uint32_t obj, uint32_t off, int n, uint32_t w1, uint32_t w2, uint32_t w3)
@@ -146,7 +147,7 @@ static uint32_t l_open(const uint32_t* a, int n)
     if (mode & 0x20) fl |= O_CREAT;
     if (mode & 0x40) fl |= O_TRUNC;
     if (mode & 0x80) fl |= O_EXCL;
-    int fd = open(path, fl, 0644);
+    int fd = open(path, fl | O_BINARY, 0644);
     if (settings_bool("debug.trace_files", 0)) fprintf(stderr, "tm2: open %s -> %s %s\n", w32_str(name), path, fd < 0 ? "FAILED" : "ok");
     if (fd < 0) return 0xffffffffu;
     for (uint32_t h = 3; h < NFD; h++) if (!fds[h]) { fds[h] = fd + 1; return h; }
