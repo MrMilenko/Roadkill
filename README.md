@@ -2,8 +2,11 @@
 
 Twisted Metal 2 for Windows 95 (1997), native on modern machines. Roadkill is built from the
 [TM2-Win9x Decomp](https://github.com/MrMilenko/TM2-Win9x-Decomp): the original `TM2.EXE`
-decompiled into C, every function the game reaches checked against the original machine code. It
-plays like the PC game; anything extra is a setting, off by default.
+decompiled into C, every function the game reaches checked against the original machine code.
+
+**Twisted Metal 2 PC behavior, by default.** Roadkill plays like the 1997 PC game. Everything
+else (widescreen, higher resolution, fixes for the original's own bugs, looping music, ...) is a
+toggle in `roadkill.ini`, off unless you switch it on.
 
 **No game data is included.** You need your own copy of the Twisted Metal 2 PC disc. Roadkill
 reads everything from your files at run time.
@@ -28,18 +31,24 @@ folders), and for the music put the disc image's `.cue` / `.bin` in `disc/`. The
 ./build/roadkill
 ```
 
-Keyboard as in the original (arrows to drive, Enter to select, Esc back); game controllers work
-as joysticks once switched on in the game's input settings. Settings the game saves (the original
-kept them in the Windows registry) go to `~/.config/opentm2/registry.txt`.
+Keyboard as in the original (arrows to drive, Enter to select, Esc back); a connected game
+controller works as the game's joystick.
 
-Useful switches (environment variables):
+Settings are in `roadkill.ini`, written with commented defaults on the first run in your user
+data folder (macOS `~/Library/Application Support/Roadkill/`, Linux `~/.local/share/roadkill/`,
+Windows `%APPDATA%\Roadkill\`). The settings the game saves itself (the original kept them in
+the Windows registry) go to `registry.txt` next to it. Environment variables override the file:
 
-| | |
-|---|---|
-| `TM2_DATA=<folder>` | where the game files are (default `disc/files`) |
-| `TM2_CDIMAGE=<file.cue>` | the disc image for the music |
-| `TM2_FULLSCREEN=1`, `TM2_SCALE=<n>` | full screen; window scale (default 2) |
-| `TM2_NOSOUND=1`, `TM2_NOJOY=1` | no sound; no controllers |
+| `roadkill.ini` | variable | |
+|---|---|---|
+| `[paths] data` | `TM2_DATA` | where the game files are (default `disc/files`) |
+| `[paths] cd_image` | `TM2_CDIMAGE` | the disc image's `.cue` for the music |
+| `[display] fullscreen`, `scale` | `TM2_FULLSCREEN=1`, `TM2_SCALE=<n>` | full screen; window scale (default 2) |
+| `[audio] sound`, `*_volume` | `TM2_NOSOUND=1`, `TM2_VOLUME=<0..100>` | no sound; volumes |
+| `[input] controller` | `TM2_NOJOY=1` | controllers (default on) |
+| `[gameplay] loop_music`, `fix_crashes` | `TM2_LOOP_MUSIC=1`, `TM2_FIX_CRASHES=1` | changes to the original, off by default |
+
+`docs/QOL.md` describes every switch.
 
 ## Where it stands
 
