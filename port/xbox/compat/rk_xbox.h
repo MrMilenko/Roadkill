@@ -40,6 +40,12 @@ FILE* rk_fopen(const char* path, const char* mode);
 #define SDL_SetWindowSize rk_SDL_SetWindowSize
 #define SDL_SetWindowPosition rk_SDL_SetWindowPosition
 #define SDL_SetWindowFullscreen rk_SDL_SetWindowFullscreen
+/* and SDL's logical size isn't relied on (with SDL2x the game came out 1:1 in the corner of a
+ * 1280 x 720 screen): xbox_screen.c keeps the logical size and scales each copy to the console's
+ * screen itself, 4:3 centred */
+#define SDL_RenderSetLogicalSize rk_SDL_RenderSetLogicalSize
+#define SDL_RenderGetLogicalSize rk_SDL_RenderGetLogicalSize
+#define SDL_RenderCopy rk_SDL_RenderCopy
 
 /* the log (D:\roadkill.log, also stderr's file) and a stop with a message on the screen */
 void rk_log(const char* fmt, ...);
