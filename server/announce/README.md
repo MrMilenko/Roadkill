@@ -5,6 +5,9 @@ static binary, nothing on disk. It introduces a joining player and the host to e
 can reach each other through home routers (UDP hole punching); the game itself then runs peer to
 peer between the players. It never carries game traffic and never sees a password.
 
+The public one: **`roadkill.horrible.dev:27400`** (the game's default; `[net] announce` points
+elsewhere).
+
 Protocol: `announce_proto.h` (shared with the game's provider). Limits: wrong sized or versioned
 datagrams dropped, 4 sessions and 20 requests a second per IP, names forced to printable ASCII,
 sessions gone 15 s after their host's last heartbeat.
