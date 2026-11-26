@@ -32,6 +32,15 @@ int rk_setenv(const char* name, const char* value, int overwrite);
 FILE* rk_fopen(const char* path, const char* mode);
 #define fopen rk_fopen
 
+/* the screen: SDL2x's window is always the console's video mode (640 x 480 up to 1280 x 720 /
+ * 1080i), and its back buffer is made that size. Roadkill sizes its window to the game's 640 x 480
+ * on the desktop; here that would leave SDL scaling for a 640 x 480 window while the back buffer
+ * stays 1280 x 720 (a quarter of the screen used). So the window keeps its size, and the
+ * renderer's logical size (dx_sdl.c) scales the game to the screen, 4:3 in the middle. */
+#define SDL_SetWindowSize rk_SDL_SetWindowSize
+#define SDL_SetWindowPosition rk_SDL_SetWindowPosition
+#define SDL_SetWindowFullscreen rk_SDL_SetWindowFullscreen
+
 /* the log (D:\roadkill.log, also stderr's file) and a stop with a message on the screen */
 void rk_log(const char* fmt, ...);
 void rk_fatal(const char* fmt, ...);

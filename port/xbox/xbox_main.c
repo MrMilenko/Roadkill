@@ -36,6 +36,12 @@ void rk_fatal(const char* fmt, ...)
     XLaunchNewImage(NULL, NULL);   /* back to the dashboard */
 }
 
+/* compat/rk_xbox.h: the window keeps the console's video mode size */
+struct SDL_Window;
+void rk_SDL_SetWindowSize(struct SDL_Window* w, int x, int y) { (void)w; (void)x; (void)y; }
+void rk_SDL_SetWindowPosition(struct SDL_Window* w, int x, int y) { (void)w; (void)x; (void)y; }
+int rk_SDL_SetWindowFullscreen(struct SDL_Window* w, unsigned flags) { (void)w; (void)flags; return 0; }
+
 /* the pad in the menus: the d-pad is the arrow keys, A Enter, B / Back Esc, Start Enter. The
  * game reads the pad as its joystick in a match (input.controller, on by default here). */
 void win32_keys_virtual(int sc, int down);
@@ -69,15 +75,37 @@ void xbox_pad_keys(void)
     }
 }
 
+/* every 5 s: the free memory, so a log that ends in a crash shows the trend before it */
+static DWORD WINAPI memory_watch(LPVOID p)
+{
+    (void)p;
+    for (;;) {
+        MEMORYSTATUS ms;
+        Sleep(5000);
+        memset(&ms, 0, sizeof ms);
+        ms.dwLength = sizeof ms;
+        GlobalMemoryStatus(&ms);
+        rk_log("memory: %u KB free", (unsigned)(ms.dwAvailPhys >> 10));
+    }
+}
+
 void __cdecl main(void)
 {
     static char* argv[] = {"D:\\default.xbe", NULL};
     freopen("D:\\roadkill.log", "w", stderr);
+    setvbuf(stderr, NULL, _IONBF, 0);   /* every line reaches the file, even when the console crashes */
     rk_log("starting");
     {
         MEMORYSTATUS ms;
+        memset(&ms, 0, sizeof ms);
+        ms.dwLength = sizeof ms;
         GlobalMemoryStatus(&ms);
         rk_log("memory: %u KB total, %u KB free", (unsigned)(ms.dwTotalPhys >> 10), (unsigned)(ms.dwAvailPhys >> 10));
+    }
+    {
+        DWORD id;
+        HANDLE h = CreateThread(NULL, 0x4000, memory_watch, NULL, 0, &id);
+        if (h) CloseHandle(h);
     }
     /* the console's screen is the game's 640 x 480: no window scale (roadkill.ini can't change it) */
     rk_setenv("TM2_SCALE", "1", 1);

@@ -20,6 +20,8 @@ int os_commit(void* p, size_t n)
     if (r) return 0;
     {
         MEMORYSTATUS ms;
+        memset(&ms, 0, sizeof ms);
+        ms.dwLength = sizeof ms;
         GlobalMemoryStatus(&ms);
         rk_log("os_commit: %u bytes at %p refused (%u KB free)", (unsigned)n, p, (unsigned)(ms.dwAvailPhys >> 10));
     }

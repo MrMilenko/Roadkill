@@ -104,7 +104,11 @@ static uint32_t c_longjmp(const uint32_t* a, int n)
 
 /* ---- the heap inside one mini heap ---- */
 
+#ifdef ROADKILL_XBOX
+#define MH_FIRST (2u << 20)    /* the console commits what it hands out: grow as the game asks */
+#else
 #define MH_FIRST (24u << 20)
+#endif
 #define MH_MIN   (1u << 20)
 #define MH_HDR   0x20u
 #define HEAPS    0x004e8e34u
