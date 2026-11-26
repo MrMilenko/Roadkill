@@ -68,6 +68,9 @@ static const Key keys[] = {
     {"net.announce", "TM2_NET_ANNOUNCE", ENV_VALUE, "roadkill.horrible.dev:27400", "the announce server internet sessions are listed and introduced through, host:port (empty: none,\n; LAN and [net] join only)"},
     {"net.public", "TM2_NET_PUBLIC", ENV_VALUE, "1", "1: a session this machine hosts is announced on that server (anyone can see and join it; a\n; password still applies); 0: not announced"},
     {"net.timeout", "TM2_NET_TIMEOUT", ENV_VALUE, "10", "seconds without a word from another machine before it is dropped from the session"},
+    {"net.session_name", "TM2_NET_SESSION_NAME", ENV_VALUE, "", "the name of a game you host (empty: what you typed last in the game)"},
+    {"player.name", "TM2_PLAYER_NAME", ENV_VALUE, "", "your driver name in network games (empty: what you typed last in the game)"},
+    {"player.alias", "TM2_PLAYER_ALIAS", ENV_VALUE, "", "your driver alias in network games (empty: what you typed last in the game)"},
 
     {"gameplay.loop_music", "TM2_LOOP_MUSIC", ENV_VALUE, "0", "1: a level's CD track starts again at once when it ends (the original's CD monitor restarts it after up to 3 seconds of silence)"},
     {"gameplay.fix_crashes", "TM2_FIX_CRASHES", ENV_VALUE, "0", "1: guard the original's own crash / hang bugs (docs/QOL.md lists them); 0: as the original"},

@@ -95,23 +95,22 @@ static void load(void)
  * title screen takes no keys. Seed the installer's state when a value is missing: keyboard on
  * (1), joystick and mouse off (2), the device flags 1. The key tables are not seeded: the game
  * restores its own defaults when they are missing. */
-#ifdef ROADKILL_XBOX
-/* The Xbox has no keyboard for the network setup screen's names: when missing, a driver name,
- * an alias and the connection are filled in (REG_SZ with its NUL, as the game reads them). A name
- * changed in the game stays. */
-static void seed_string(const char* k, const char* name, const char* text)
+/* a REG_SZ value (with its NUL, as the game reads them): only when missing, or always */
+static void set_string(const char* k, const char* name, const char* text, int always)
 {
-    if (val_find(k, name)) return;
-    vals = realloc(vals, sizeof(Val) * (size_t)(nvals + 1));
-    Val* v = &vals[nvals++];
-    v->key = strdup(k);
-    v->name = strdup(name);
+    Val* v = val_find(k, name);
+    if (v && !always) return;
+    if (!v) {
+        vals = realloc(vals, sizeof(Val) * (size_t)(nvals + 1));
+        v = &vals[nvals++];
+        v->key = strdup(k);
+        v->name = strdup(name);
+    } else free(v->data);
     v->type = 1;   /* REG_SZ */
     v->size = (uint32_t)strlen(text) + 1;
     v->data = malloc(v->size + 1);
     memcpy(v->data, text, v->size);
 }
-#endif
 
 static void seed_defaults(void)
 {
@@ -133,10 +132,20 @@ static void seed_defaults(void)
         v->data = malloc(5);
         for (int b = 0; b < 4; b++) v->data[b] = (uint8_t)(d[i].v >> (8 * b));
     }
+    /* names for the network screens from roadkill.ini ([player] name / alias, [net] session_name):
+     * set, they replace what the game saved (the Xbox has no keyboard to type them) */
+    static const struct { const char* key; const char* value; } names[] = {
+        {"player.name", "NetPlayerName"}, {"player.alias", "NetPlayerCallsign"}, {"net.session_name", "NetSessionName"},
+    };
+    for (unsigned i = 0; i < sizeof names / sizeof names[0]; i++) {
+        const char* t = settings_str(names[i].key, NULL);
+        if (t && *t) set_string(k, names[i].value, t, 1);
+    }
 #ifdef ROADKILL_XBOX
-    seed_string(k, "NetPlayerName", "Xbox Player");
-    seed_string(k, "NetPlayerCallsign", "Xbox");
-    seed_string(k, "NetProviderName", "Internet TCP/IP Connection For DirectPlay");
+    /* the Xbox: names and the connection filled in when nothing set them yet */
+    set_string(k, "NetPlayerName", "Xbox Player", 0);
+    set_string(k, "NetPlayerCallsign", "Xbox", 0);
+    set_string(k, "NetProviderName", "Internet TCP/IP Connection For DirectPlay", 0);
 #endif
 }
 
