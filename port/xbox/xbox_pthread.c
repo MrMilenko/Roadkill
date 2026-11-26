@@ -102,11 +102,17 @@ int pthread_attr_setstacksize(pthread_attr_t* a, size_t n) { a->stack = n; retur
 
 typedef struct { void* (*fn)(void*); void* arg; } Start;
 
+LONG rk_crash_report(EXCEPTION_POINTERS* e);
+
 static DWORD WINAPI thread_main(LPVOID p)
 {
     Start s = *(Start*)p;
     free(p);
-    s.fn(s.arg);
+    __try {
+        s.fn(s.arg);
+    } __except (rk_crash_report(GetExceptionInformation())) {
+        rk_log("CRASH: in thread %lu", (unsigned long)GetCurrentThreadId());
+    }
     rk_tls_release();
     return 0;
 }

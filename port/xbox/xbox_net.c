@@ -16,9 +16,10 @@
 
 struct NetSock { SOCKET fd; };
 
-static int started;
+static volatile LONG started;   /* 0 not yet, 1 up, -1 failed */
 
-void xbox_net_start(void)
+/* on its own thread (xbox_net_start): a network that hangs XNet's start can't stall the game */
+static DWORD WINAPI net_start_thread(LPVOID unused)
 {
     XNetStartupParams p;
     WSADATA w;
@@ -37,12 +38,23 @@ void xbox_net_start(void)
     p.cfgSockMaxSockets = 64;
     p.cfgKeyRegMax = 0;
     p.cfgSecRegMax = 0;
-    rk_log("network: ethernet link %s", link & XNET_ETHERNET_LINK_ACTIVE ? "up" : "down");
+    (void)unused;
+    rk_log("network: ethernet link %s; starting XNet", link & XNET_ETHERNET_LINK_ACTIVE ? "up" : "down");
     r = XNetStartup(&p);
-    if (r != 0) { rk_log("network: XNetStartup failed (%d)", r); return; }
-    if (WSAStartup(MAKEWORD(2, 2), &w) != 0) { rk_log("network: WSAStartup failed"); return; }
+    if (r != 0) { rk_log("network: XNetStartup failed (%d)", r); started = -1; return 0; }
+    rk_log("network: XNetStartup done; WSAStartup");
+    if (WSAStartup(MAKEWORD(2, 2), &w) != 0) { rk_log("network: WSAStartup failed"); started = -1; return 0; }
     started = 1;
     rk_log("network: XNet started (security bypassed for PCs)");
+    return 0;
+}
+
+void xbox_net_start(void)
+{
+    DWORD id;
+    HANDLE h = CreateThread(NULL, 0x8000, net_start_thread, NULL, 0, &id);
+    if (h) CloseHandle(h);
+    else rk_log("network: no thread to start XNet");
 }
 
 /* the console's address: XNet gets it from DHCP (or the dashboard's static settings) */
@@ -67,7 +79,9 @@ int net_sock_init(void)
 {
     uint32_t ip;
     static int told;
-    if (!started) return -1;
+    int waited = 0;
+    while (started == 0 && waited < 15000) { Sleep(100); waited += 100; }   /* XNet still starting */
+    if (started != 1) return -1;
     if (title_ip(&ip, 10000) != 0) {
         if (!told) rk_log("network: the console has no IP address (cable, DHCP or the dashboard's settings)");
         told = 1;
@@ -203,7 +217,7 @@ int net_addr_resolve(const char* text, uint16_t defport, NetAddr* out)
 int net_sock_local_ip(const NetAddr* toward, uint32_t* ip)
 {
     (void)toward;
-    return started ? title_ip(ip, 0) : -1;
+    return started == 1 ? title_ip(ip, 0) : -1;
 }
 
 uint32_t net_now_ms(void) { return (uint32_t)GetTickCount(); }

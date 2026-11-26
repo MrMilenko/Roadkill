@@ -119,6 +119,27 @@ static DWORD WINAPI memory_watch(LPVOID p)
     }
 }
 
+/* a fault in the game is written to the log (XBDM can't be reached once the game's network is
+ * up, so a crash would otherwise look like a freeze) */
+LONG rk_crash_report(EXCEPTION_POINTERS* e)
+{
+    const EXCEPTION_RECORD* r = e->ExceptionRecord;
+    const CONTEXT* c = e->ContextRecord;
+    rk_log("CRASH: exception %08lx at %08lx (address %08lx)", (unsigned long)r->ExceptionCode,
+           (unsigned long)(ULONG_PTR)r->ExceptionAddress,
+           r->NumberParameters > 1 ? (unsigned long)r->ExceptionInformation[1] : 0ul);
+    rk_log("CRASH: eax %08lx ebx %08lx ecx %08lx edx %08lx esi %08lx edi %08lx ebp %08lx esp %08lx",
+           c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp);
+    {
+        const ULONG* sp = (const ULONG*)c->Esp;
+        int i;
+        for (i = 0; i < 48; i += 8)
+            rk_log("CRASH: stack %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx", sp[i], sp[i + 1], sp[i + 2],
+                   sp[i + 3], sp[i + 4], sp[i + 5], sp[i + 6], sp[i + 7]);
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 void __cdecl main(void)
 {
     static char* argv[] = {"D:\\default.xbe", NULL};
@@ -144,7 +165,11 @@ void __cdecl main(void)
     }
     /* the console's screen is the game's 640 x 480: no window scale (roadkill.ini can't change it) */
     rk_setenv("TM2_SCALE", "1", 1);
-    roadkill_main(1, argv);
+    __try {
+        roadkill_main(1, argv);
+    } __except (rk_crash_report(GetExceptionInformation())) {
+        Sleep(3000);
+    }
     rk_log("the game ended");
     fflush(stderr);
     XLaunchNewImage(NULL, NULL);
