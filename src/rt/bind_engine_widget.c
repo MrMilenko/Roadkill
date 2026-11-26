@@ -35,6 +35,33 @@ G0(b_pair_commit, en_wg_pair_commit)        /* 0x004a2018 */
 G0(b_t204c_commit, en_wg_t204c_commit)      /* 0x004a2290 */
 G0(b_t23fc_commit, en_wg_t23fc_commit)      /* 0x004a27d4 */
 
+#ifdef ROADKILL_XBOX
+/* The Xbox's pad layout (port/xbox; the console's default where the desktop keeps the 1997 one).
+ * 0x004a27d4 copies the joystick defaults 0x00a8247c into the joystick map 0x00a823fc (the first
+ * run, a different controller, Input Config's default): the defaults are the console's here. The
+ * map is indexed by the game function (the Input Config rows' ids, 0x004e7a44) and holds the
+ * joystick input: 1.. the buttons in input_joy.c's order (1 A, 2 B, 3 X, 4 Y, 5 White, 6 Black,
+ * 7 Back, 8 Start, 11 / 12 the left / right trigger, 13..16 the d-pad up, down, left, right),
+ * 0x21..0x24 the stick right / left / back / forward. */
+static uint32_t b_t23fc_commit_xbox(const uint32_t* a, int n)
+{
+    static const uint8_t pad[0x80] = {
+        [0x22] = 0x21, [0x23] = 0x22,   /* turn right / left: the left stick */
+        [0x24] = 12, [0x25] = 11,       /* accelerate / brakes: the right / left trigger */
+        [0x26] = 0x24, [0x27] = 0x23,   /* idle forward / reverse: the stick forward / back */
+        [0x28] = 4,                     /* tight turn: Y */
+        [0x29] = 2,                     /* turbo: B */
+        [0x2a] = 1,                     /* machine guns: A */
+        [0x2b] = 3,                     /* fire weapons: X */
+        [0x2c] = 6, [0x2d] = 5,         /* next / previous weapon: Black / White */
+        [0x4a] = 13, [0x4c] = 14,       /* radar / enemy list: d-pad up / down */
+        [0x3c] = 15, [0x3d] = 16,       /* previous / next VR mode: d-pad left / right */
+    };
+    memcpy(rt_ptr(0x00a8247cu), pad, sizeof pad);
+    return b_t23fc_commit(a, n);
+}
+#endif
+
 /* 0x004a1ff8 (EAX i, DL v, EBX ofs) */
 static uint32_t b_pair_set_b(const uint32_t* a, int n) { en_wg_pair_set_b(&W, A(0), (uint8_t)A(1), A(2)); return 0; }
 /* 0x004a2278 / 0x004a274c / 0x004a27bc (EAX i, DL v) */
@@ -134,7 +161,11 @@ void rt_bind_engine_widget(void)
     rt_bind(0x004a2764u, b_t23fc_clear, "table_23fc_clear");
     rt_bind(0x004a27bcu, b_t247c_set, "table_247c_set");
     rt_bind(0x004a27c8u, b_t247c_get, "widget_get_value");
+#ifdef ROADKILL_XBOX
+    rt_bind(0x004a27d4u, b_t23fc_commit_xbox, "table_23fc_commit");
+#else
     rt_bind(0x004a27d4u, b_t23fc_commit, "table_23fc_commit");
+#endif
     rt_bind(0x004a2810u, b_t24fc_clear, "table_24fc_clear");
     rt_bind(0x004a28acu, b_t23fc_map, "table_23fc_map");
     rt_bind(0x004a2d9cu, b_t23fc_table, "table_23fc_info");
