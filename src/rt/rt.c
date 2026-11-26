@@ -149,6 +149,18 @@ void rt_bind_import(const char* name, RtFn fn)
     if (slot) rt_bind(slot, fn, name);
 }
 
+volatile uint32_t rt_world_updates;
+
+int rt_is_host_ptr(uintptr_t v)
+{
+#if UINTPTR_MAX > 0xffffffffu
+    return v > 0xffffffffu;
+#else
+    if (v >= (uintptr_t)rt_base && v < (uintptr_t)rt_base + RT_SIZE) return 1;
+    return os_on_stack((const void*)v);
+#endif
+}
+
 void rt_shutdown(void)
 {
     if (rt_base) os_release(rt_base, RT_SIZE);

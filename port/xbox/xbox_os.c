@@ -10,7 +10,20 @@
 #include <string.h>
 #include "host/os/os.h"
 
-void* os_reserve(size_t n) { return VirtualAlloc(NULL, n, MEM_RESERVE, PAGE_READWRITE); }
+/* The game memory goes high, above every game address (they are below 64 MB, the handles the game
+ * passes around above 0x80000000): ports tell a host pointer from a game value by where it
+ * points (rt_is_host_ptr), and the host's own memory would overlap game addresses. */
+void* os_reserve(size_t n)
+{
+    static const ULONG_PTR at[] = {0x40000000u, 0x30000000u, 0x20000000u, 0x10000000u};
+    size_t i;
+    for (i = 0; i < sizeof at / sizeof at[0]; i++) {
+        void* p = VirtualAlloc((void*)at[i], n, MEM_RESERVE, PAGE_READWRITE);
+        if (p) return p;
+    }
+    rk_log("os_reserve: no high address for the game memory (it may overlap game addresses)");
+    return VirtualAlloc(NULL, n, MEM_RESERVE, PAGE_READWRITE);
+}
 void os_release(void* p, size_t n) { (void)n; VirtualFree(p, 0, MEM_RELEASE); }
 
 int os_commit(void* p, size_t n)
@@ -81,4 +94,12 @@ void rk_tls_release(void)
     void* t = current_thread();
     int i;
     for (i = 0; i < TLS_SLOTS; i++) if (slots[i].thread == t) slots[i].thread = NULL;
+}
+
+int os_on_stack(const void* p)
+{
+    const char *base, *limit;
+    __asm__ volatile("movl %%fs:4, %0" : "=r"(base));    /* NT_TIB.StackBase */
+    __asm__ volatile("movl %%fs:8, %0" : "=r"(limit));   /* NT_TIB.StackLimit */
+    return (const char*)p >= limit && (const char*)p < base;
 }

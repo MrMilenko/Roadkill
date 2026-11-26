@@ -134,6 +134,7 @@ static uint8_t* w_resolve(void* u, uint32_t h) { (void)u; return rt_ptr(h); }
 
 static uint32_t b_world_update(const uint32_t* a, int n)
 {
+    rt_world_updates++;
     (void)a; (void)n;
     static Mt2World w;
     if (!w.blk) {

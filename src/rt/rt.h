@@ -44,6 +44,17 @@ static inline void rt_w32(uint32_t a, uint32_t v) { memcpy(rt_ptr(a), &v, 4); }
 static inline void rt_w16(uint32_t a, uint16_t v) { memcpy(rt_ptr(a), &v, 2); }
 static inline void rt_w8(uint32_t a, uint8_t v) { *rt_ptr(a) = v; }
 
+/* 1 when v, a port's uintptr_t argument, is a host pointer (into the game memory, or the port's
+ * own locals) rather than a game value. On 64 bit hosts any value past 32 bits; on 32 bit hosts
+ * (the Xbox) a pointer into the game memory (which sits above every game address there) or into
+ * the calling thread's stack. */
+int rt_is_host_ptr(uintptr_t v);
+
+/* counts the game's cars_update_all 0x00458470 calls: it runs every frame of a match that is not
+ * paused (and of the attract demo), so a host can tell driving from menus (port/xbox: the pad's
+ * menu keys) */
+extern volatile uint32_t rt_world_updates;
+
 /* 0 on success; reads the player's TM2.EXE and copies its sections into the address space */
 int rt_init(const char* exe_path);
 void rt_shutdown(void);

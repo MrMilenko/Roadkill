@@ -23,7 +23,7 @@ static uint32_t xcall(uint32_t fn, const uintptr_t* args, int n)
     if (n > XMAX) rt_stop("too many arguments", fn);
     for (int i = 0; i < n; i++) {
         uintptr_t v = args[i];
-        if (v <= 0xffffffffu) a[i] = (uint32_t)v;
+        if (!rt_is_host_ptr(v)) a[i] = (uint32_t)v;
         else if (is_game_ptr(v)) a[i] = rt_addr((const void*)v);
         else { if (v < lo) lo = v; if (v > hi) hi = v; }
     }
@@ -35,7 +35,7 @@ static uint32_t xcall(uint32_t fn, const uintptr_t* args, int n)
     memcpy(rt_ptr(f), (const void*)lo, span);
     memcpy(snap, (const void*)lo, span);
     for (int i = 0; i < n; i++)
-        if (args[i] > 0xffffffffu && !is_game_ptr(args[i])) a[i] = f + (uint32_t)(args[i] - lo);
+        if (rt_is_host_ptr(args[i]) && !is_game_ptr(args[i])) a[i] = f + (uint32_t)(args[i] - lo);
     uint32_t r = rt_call(fn, a, n);
     const uint8_t* g = rt_ptr(f);
     for (uint32_t k = 0; k < span; k++)

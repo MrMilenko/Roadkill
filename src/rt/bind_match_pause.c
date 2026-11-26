@@ -112,7 +112,7 @@ static uint32_t key_words;    /* 3 (load) / 1 (save) */
 
 static uint32_t to_game(uintptr_t v)
 {
-    if (v <= 0xffffffffu) return (uint32_t)v;
+    if (!rt_is_host_ptr(v)) return (uint32_t)v;
     const uint8_t* p = (const uint8_t*)v;
     if (key_host && p >= key_host && p < key_host + 4 * key_words) return key_game + (uint32_t)(p - key_host);
     if (p >= rt_base && p < rt_base + RT_SIZE) return rt_addr(p);

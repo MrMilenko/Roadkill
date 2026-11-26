@@ -22,6 +22,8 @@ void os_release(void* p, size_t n);
 int os_commit(void* p, size_t n);
 /* the highest address of the calling thread's stack */
 char* os_stack_top(void);
+/* 1 when p is in the calling thread's stack (needed by 32 bit hosts only: rt_is_host_ptr) */
+int os_on_stack(const void* p);
 /* one directory; 0 when it was made or is already there */
 int os_mkdir(const char* path);
 /* ROADKILL_NO_TLS builds (the Xbox: its compiler setup has no __thread): this thread's own zeroed

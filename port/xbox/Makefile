@@ -34,8 +34,9 @@ RK_FLAGS = -std=gnu99 -Xclang -fdefault-calling-conv=cdecl -ffp-contract=off \
            -I$(CURDIR)/compat -I$(ROADKILL)/src -I$(ROADKILL)/src/rt -I$(ROADKILL)/third_party/indeo -I$(ROADKILL)/third_party/dr_libs \
            -include $(CURDIR)/compat/rk_xbox.h \
            -Wno-microsoft-anon-tag -Wno-unused-parameter -Wno-incompatible-pointer-types-discards-qualifiers
-CFLAGS   += $(SDL2X_DEFINES) $(SDL2X_INCLUDES)
-CXXFLAGS += $(SDL2X_DEFINES) $(SDL2X_INCLUDES)
+# every file, SDL2x's too: clang's va_start / va_arg (compat/stdarg.h says why)
+CFLAGS   += -include $(CURDIR)/compat/stdarg.h $(SDL2X_DEFINES) $(SDL2X_INCLUDES)
+CXXFLAGS += -include $(CURDIR)/compat/stdarg.h $(SDL2X_DEFINES) $(SDL2X_INCLUDES)
 
 OXDK_LIBS = $(SDL2X_LIBS) oldnames.lib
 # the main thread runs the whole game (the desktop gives it 8 MB): 2 MB here

@@ -23,6 +23,13 @@ char* os_stack_top(void)
     return (char*)hi;
 }
 
+int os_on_stack(const void* p)
+{
+    ULONG_PTR lo, hi;
+    GetCurrentThreadStackLimits(&lo, &hi);
+    return (ULONG_PTR)p >= lo && (ULONG_PTR)p < hi;
+}
+
 int os_mkdir(const char* path) { return _mkdir(path) == 0 || errno == EEXIST ? 0 : -1; }
 int os_setenv(const char* name, const char* value) { return _putenv_s(name, value) == 0 ? 0 : -1; }
 
@@ -51,6 +58,12 @@ char* os_stack_top(void)
     pthread_attr_destroy(&at);
     return (char*)base + size;
 #endif
+}
+
+int os_on_stack(const void* p)
+{
+    char probe;
+    return (const char*)p >= &probe - (64 << 20) && (const char*)p < os_stack_top();
 }
 
 int os_mkdir(const char* path) { return mkdir(path, 0755) == 0 || errno == EEXIST ? 0 : -1; }
