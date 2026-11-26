@@ -34,10 +34,19 @@ E1(b_game_loop_run, en7_game_loop_run(&e))                               /* 0x00
 E1(b_widget_navigate, en7_widget_navigate(&e, A(0), A(1)))               /* 0x004a798c */
 
 /* 0x00497d2c (EAX o, EDX list box). The harness scripted the list box answers; here the real
- * callees answer. */
+ * callees answer. Its sprintf call (0x004b27e6, cdecl) carries two register words before the
+ * three stack words (dest, format, the name: as the harness recorded it); sprintf's binding reads
+ * the stack words from a[0], so they are passed on without the registers (the join screen's
+ * "Current Drivers" list was filled with empty rows). */
+static uint32_t listbox_sync_call(void* user, uint32_t fn, const uint32_t* args, int n)
+{
+    if (fn == 0x004b27e6u && n == 5) return rt_call_cb(user, fn, args + 2, 3);
+    return rt_call_cb(user, fn, args, n);
+}
 static uint32_t b_listbox_sync(const uint32_t* a, int n)
 {
     En2Env e = rt_en2env();
+    e.call = listbox_sync_call;
     en7_session_listbox_sync(&e, A(0), A(1));
     rt_en2env_done();
     return 0;
