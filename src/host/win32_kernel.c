@@ -10,11 +10,11 @@
  *
  * Threads: CreateThread runs the game's thread procedure (stdcall, one word at a[0]) on a pthread via
  * rt_call. All game code runs holding the host lock (main takes it at start up); a thread gives
- * it up only while it blocks (Sleep, WaitForSingleObject, its end). NOT YET SAFE: rt.c keeps one
- * call chain (depth) and one frame stack (rt_frame_push) for all threads, so a thread that
- * blocks inside frames while another pushes / pops corrupts the stack. The core needs a frame
- * stack top and call depth per thread (see the report / RUNTIME.md). TerminateThread marks the
- * thread; it ends the next time it blocks.
+ * it up only while it blocks (Sleep, WaitForSingleObject, its end, a host call that waits such as
+ * DirectPlay's Open with DPOPEN_JOIN), and the main thread hands it to a waiting thread from
+ * PeekMessageA (w32_yield). Each thread has its own frame slice and call chain
+ * (rt_thread_begin, docs/RUNTIME.md), so a thread that blocks inside frames is safe.
+ * TerminateThread marks the thread; it ends the next time it blocks.
  *
  * Memory: GlobalAlloc / VirtualAlloc take game memory from the runtime heap (rt_heap_grow) with
  * a host side free list by size class (freed blocks are reused, never returned).

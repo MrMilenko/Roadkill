@@ -1,0 +1,374 @@
+/*
+ * test_net.c: the network provider's transport and packet checks on their own (src/host/net
+ * net_wire.c, net_link.c), no sockets, no game: ./build/test_net (exit 0 = every check passed).
+ *
+ *   1. headers and payloads round trip; malformed ones are refused (bad magic, version, type,
+ *      lengths, tokens, strings with a NUL or longer than the game's fields, game messages of 0 or
+ *      more than 0x400 bytes, DPIDs 0 / -1, trailing bytes), and random / mutated datagrams never
+ *      get through as something else
+ *   2. two links over a simulated network that loses, duplicates and reorders packets: every
+ *      reliable message arrives exactly once and in order, both ways
+ *   3. a reliable message the receiver refuses is not acked (it comes again), acks for something
+ *      never sent are refused, and a silent peer times out
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "host/net/net_link.h"
+#include "host/net/net_wire.h"
+
+static int fails, checks;
+#define CHECK(c, ...) do { checks++; if (!(c)) { fails++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
+
+static uint32_t rng = 12345;
+static uint32_t rnd(void) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng; }
+
+/* ---- 1. wire ---- */
+
+static int mkhdr(uint8_t* p, uint8_t type, uint8_t from, uint8_t to, uint64_t token)
+{
+    NwHdr h = {type, from, to, token, 7, 3, 0x5};
+    nw_hdr_write(p, &h);
+    return NW_HDR;
+}
+
+static void test_wire(void)
+{
+    uint8_t p[NW_MAX_PACKET + 16];
+    NwHdr h;
+
+    mkhdr(p, NW_REL, 1, 2, 0x1122334455667788ull);
+    CHECK(nw_hdr_read(p, NW_HDR, &h) == 0 && h.type == NW_REL && h.from == 1 && h.to == 2 && h.token == 0x1122334455667788ull
+          && h.seq == 7 && h.ack == 3 && h.ack_bits == 5, "header round trip");
+    CHECK(nw_hdr_read(p, NW_HDR - 1, &h) != 0, "short header refused");
+    CHECK(nw_hdr_read(p, NW_MAX_PACKET + 1, &h) != 0, "oversized datagram refused");
+    p[0] ^= 1;
+    CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "bad magic refused");
+    p[0] ^= 1;
+    p[4] = 2;
+    CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "other protocol version refused");
+    p[4] = NW_VERSION;
+    p[5] = 0x55;
+    CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "unknown type refused");
+    mkhdr(p, NW_REL, 1, 2, 0);
+    CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "session packet without a token refused");
+    mkhdr(p, NW_REL, 0, 2, 9);
+    CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "session packet from peer 0 refused");
+    mkhdr(p, NW_ENUM_REQ, 0, 0, 9);
+    CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "session-less packet with a token refused");
+    mkhdr(p, NW_ENUM_REQ, 0, 0, 0);
+    CHECK(nw_hdr_read(p, NW_HDR, &h) == 0, "session-less header");
+
+    /* messages */
+    uint8_t game[NW_MAX_GAME + 1];
+    for (int i = 0; i < (int)sizeof game; i++) game[i] = (uint8_t)i;
+    NwMsg m, r;
+    memset(&m, 0, sizeof m);
+    m.kind = NM_GAME;
+    m.from = 0x10000101u;
+    m.to = 0;
+    m.n = NW_MAX_GAME;
+    m.data = game;
+    int n = nw_msg_write(p, NL_MAX_PAYLOAD, &m);
+    CHECK(n > 0 && nw_msg_read(p, n, &r) == 0 && r.n == NW_MAX_GAME && !memcmp(r.data, game, NW_MAX_GAME), "0x400 byte game message");
+    CHECK(nw_msg_read(p, n - 1, &r) != 0, "cut game message refused");
+    p[n] = 0;
+    CHECK(nw_msg_read(p, n + 1, &r) != 0, "trailing byte refused");
+    m.n = NW_MAX_GAME + 1;
+    CHECK(nw_msg_write(p, sizeof p, &m) == 0, "0x401 byte game message not written");
+    /* forge one: size field 0x401 */
+    m.n = 4;
+    n = nw_msg_write(p, NL_MAX_PAYLOAD, &m);
+    p[9] = 0x01; p[10] = 0x04;
+    CHECK(nw_msg_read(p, n, &r) != 0, "forged 0x401 size refused");
+    m.n = 4;
+    n = nw_msg_write(p, NL_MAX_PAYLOAD, &m);
+    p[9] = 0; p[10] = 0;
+    CHECK(nw_msg_read(p, n - 4, &r) != 0, "empty game message refused");
+    m.from = 0;
+    n = nw_msg_write(p, NL_MAX_PAYLOAD, &m);
+    CHECK(nw_msg_read(p, n, &r) != 0, "game message from DPID 0 refused");
+    m.from = 0xffffffffu;
+    n = nw_msg_write(p, NL_MAX_PAYLOAD, &m);
+    CHECK(nw_msg_read(p, n, &r) != 0, "game message from DPID -1 refused");
+
+    memset(&m, 0, sizeof m);
+    m.kind = NM_PLAYER;
+    m.id = 0x10000203u;
+    m.owner = 2;
+    strcpy(m.sname, "Sweet Tooth");
+    strcpy(m.lname, "Needles Kane");
+    m.n = 0x138;
+    m.data = game;
+    n = nw_msg_write(p, NL_MAX_PAYLOAD, &m);
+    CHECK(n > 0 && nw_msg_read(p, n, &r) == 0 && !strcmp(r.sname, "Sweet Tooth") && !strcmp(r.lname, "Needles Kane") && r.n == 0x138,
+          "player round trip");
+    /* the short name's length byte is at 1 + 4 + 1 + 4 = 10 */
+    uint8_t q[NW_MAX_PACKET];
+    memcpy(q, p, (size_t)n);
+    q[12] = 0;
+    CHECK(nw_msg_read(q, n, &r) != 0, "name with a NUL refused");
+    memcpy(q, p, (size_t)n);
+    q[10] = 0x80;
+    CHECK(nw_msg_read(q, n, &r) != 0, "name longer than 0x7f refused");
+    memcpy(q, p, (size_t)n);
+    q[10] = 0xff;
+    CHECK(nw_msg_read(q, n, &r) != 0, "name past the end refused");
+    m.n = NW_MAX_PDATA + 1;
+    CHECK(nw_msg_write(p, sizeof p, &m) == 0, "oversized player data not written");
+    q[0] = 99;
+    CHECK(nw_msg_read(q, n, &r) != 0, "unknown message kind refused");
+
+    /* ENUM_REQ: padded to a fixed size (no amplification), anything else refused */
+    uint8_t app[16] = {1, 2, 3}, app2[16];
+    uint32_t compat;
+    n = nw_enum_req_write(p, NW_MAX_PACKET, app, 7);
+    CHECK(n == NW_ENUM_REQ_SIZE && nw_enum_req_read(p, n, app2, &compat) == 0 && compat == 7 && !memcmp(app, app2, 16), "enum request");
+    CHECK(nw_enum_req_read(p, 20, app2, &compat) != 0, "short (unpadded) enum request refused");
+
+    /* session info, join */
+    NwSessionInfo si, so;
+    memset(&si, 0, sizeof si);
+    memcpy(si.d.name, "Arena", 6);
+    si.d.max_players = 8;
+    si.d.cur_players = 2;
+    si.nplayers = 2;
+    si.players[0].id = 0x10000101u;
+    strcpy(si.players[0].sname, "a");
+    si.players[1].id = 0x10000201u;
+    strcpy(si.players[1].lname, "b");
+    n = nw_session_info_write(p, NW_MAX_PACKET - NW_HDR, &si);
+    CHECK(n > 0 && nw_session_info_read(p, n, &so) == 0 && so.nplayers == 2 && !strcmp(so.d.name, "Arena"), "session info round trip");
+    si.d.max_players = 1000;
+    n = nw_session_info_write(p, NW_MAX_PACKET - NW_HDR, &si);
+    CHECK(nw_session_info_read(p, n, &so) != 0, "absurd max players refused");
+    /* full names for 16 players do not fit one datagram: the names that fit go */
+    memset(&si, 0, sizeof si);
+    si.d.max_players = 16;
+    si.nplayers = 16;
+    for (int i = 0; i < 16; i++) {
+        si.players[i].id = 0x10000101u + (uint32_t)i;
+        memset(si.players[i].sname, 'x', NW_MAX_NAME);
+        memset(si.players[i].lname, 'y', NW_MAX_NAME);
+    }
+    n = nw_session_info_write(p, NW_MAX_PACKET - NW_HDR, &si);
+    CHECK(n > 0 && n <= NW_MAX_PACKET - NW_HDR && nw_session_info_read(p, n, &so) == 0 && so.nplayers > 0 && so.nplayers < 16,
+          "long name lists cut to the datagram");
+
+    NwJoinAccept ja, jb;
+    memset(&ja, 0, sizeof ja);
+    ja.nonce = 5;
+    ja.token = 6;
+    ja.you = 2;
+    ja.host = 1;
+    n = nw_join_accept_write(p, NW_MAX_PACKET, &ja);
+    CHECK(n > 0 && nw_join_accept_read(p, n, &jb) == 0 && jb.you == 2 && jb.token == 6, "join accept round trip");
+    ja.you = 1;
+    n = nw_join_accept_write(p, NW_MAX_PACKET, &ja);
+    CHECK(nw_join_accept_read(p, n, &jb) != 0, "join accept giving the host's own number refused");
+    uint64_t nonce;
+    uint32_t hr;
+    n = nw_join_refuse_write(p, 64, 5, 0);
+    CHECK(nw_join_refuse_read(p, n, &nonce, &hr) != 0, "a 'refusal' with a success code refused");
+
+    /* fuzz: random datagrams and single byte mutations of valid ones never crash the decoders;
+     * random ones are (practically) never accepted as headers */
+    int accepted = 0;
+    for (int it = 0; it < 200000; it++) {
+        int len = (int)(rnd() % (NW_MAX_PACKET + 8));
+        for (int i = 0; i < len; i++) p[i] = (uint8_t)rnd();
+        if (nw_hdr_read(p, len, &h) == 0) accepted++;
+        nw_msg_read(p, len, &r);
+        nw_session_info_read(p, len, &so);
+        NwJoinReq jr;
+        nw_join_req_read(p, len, &jr);
+        nw_join_accept_read(p, len, &jb);
+    }
+    CHECK(accepted == 0, "random datagrams accepted as headers: %d", accepted);
+    memset(&m, 0, sizeof m);
+    m.kind = NM_PLAYER;
+    m.id = 0x10000203u;
+    m.owner = 2;
+    strcpy(m.sname, "name");
+    m.n = 16;
+    m.data = game;
+    int base = nw_msg_write(q, NL_MAX_PAYLOAD, &m);
+    for (int it = 0; it < 200000; it++) {
+        memcpy(p, q, (size_t)base);
+        int len = base;
+        p[rnd() % (uint32_t)base] = (uint8_t)rnd();
+        if (rnd() & 1) len = (int)(rnd() % (uint32_t)(base + 4));
+        if (nw_msg_read(p, len, &r) == 0 && r.kind == NM_PLAYER) {
+            /* what passes is well formed */
+            CHECK(r.n <= NW_MAX_PDATA && strlen(r.sname) <= NW_MAX_NAME && nw_dpid_ok(r.id), "mutated message passed malformed");
+        }
+    }
+}
+
+/* ---- 2. links over a lossy network ---- */
+
+typedef struct Pkt { uint32_t at; int to; int len; uint8_t d[NW_MAX_PACKET]; } Pkt;
+static Pkt* net[100000];
+static int nnet;
+static int loss_pct = 30, dup_pct = 5, jitter = 40;
+static int sent_pkts;
+
+typedef struct End { NetLink l; int id; } End;
+static End ends[2];
+static uint32_t now;
+
+static void enqueue(int to, const uint8_t* pkt, int len)
+{
+    if (nnet >= 100000) return;
+    Pkt* p = malloc(sizeof *p);
+    p->at = now + 10 + rnd() % (uint32_t)(jitter + 1);   /* jitter reorders */
+    p->to = to;
+    p->len = len;
+    memcpy(p->d, pkt, (size_t)len);
+    net[nnet++] = p;
+}
+
+static void send_cb(void* user, const uint8_t* pkt, int len)
+{
+    End* e = user;
+    sent_pkts++;
+    if ((int)(rnd() % 100) < loss_pct) return;
+    enqueue(1 - e->id, pkt, len);
+    if ((int)(rnd() % 100) < dup_pct) enqueue(1 - e->id, pkt, len);
+}
+
+static uint32_t got_next[2];       /* the next sequence number each end expects to receive */
+static int order_errors, refuse_odd_once, refused;
+static uint32_t unrel_got[2];
+
+static int check_cb(void* user, const uint8_t* payload, int len)
+{
+    End* e = user;
+    (void)e;
+    if (len < 5) return -1;
+    if (refuse_odd_once && payload[0] == 'R') {
+        uint32_t v;
+        memcpy(&v, payload + 1, 4);
+        if ((v & 1) && !(payload[0] == 'R' && rnd() % 2)) { refused++; return -1; }
+    }
+    return 0;
+}
+
+static void deliver_cb(void* user, int reliable, const uint8_t* payload, int len)
+{
+    End* e = user;
+    (void)len;
+    uint32_t v;
+    memcpy(&v, payload + 1, 4);
+    if (!reliable) { unrel_got[e->id]++; return; }
+    if (v != got_next[e->id]) order_errors++;
+    got_next[e->id] = v + 1;
+}
+
+static void pump(void)
+{
+    for (int i = 0; i < nnet;) {
+        Pkt* p = net[i];
+        if ((int32_t)(now - p->at) >= 0) {
+            End* e = &ends[p->to];
+            NwHdr h;
+            if (nw_hdr_read(p->d, p->len, &h) == 0) {
+                NetLinkOut o = {send_cb, e};
+                nl_on_packet(&e->l, &h, p->d + NW_HDR, p->len - NW_HDR, now, &o, check_cb, deliver_cb, e);
+            }
+            free(p);
+            net[i] = net[--nnet];
+        } else i++;
+    }
+}
+
+static void run_lossy(int count, uint32_t max_ms)
+{
+    uint64_t token = 0xabcdef0123456789ull;
+    now = 1000;
+    for (int i = 0; i < 2; i++) {
+        ends[i].id = i;
+        nl_init(&ends[i].l, (uint8_t)(i + 1), (uint8_t)(2 - i), token, 60000, now);
+    }
+    got_next[0] = got_next[1] = 0;
+    order_errors = 0;
+    unrel_got[0] = unrel_got[1] = 0;
+    uint32_t next_send[2] = {0, 0};
+    uint32_t end = now + max_ms;
+    while ((int32_t)(end - now) > 0) {
+        for (int i = 0; i < 2; i++) {
+            NetLinkOut o = {send_cb, &ends[i]};
+            /* bursts of up to 8 a tick: more than the window holds, so messages wait too */
+            for (int k = 0; k < 8 && next_send[i] < (uint32_t)count; k++) {
+                uint8_t msg[64] = {'R'};
+                memcpy(msg + 1, &next_send[i], 4);
+                CHECK(nl_send_rel(&ends[i].l, msg, 5 + (int)(rnd() % 50), now, &o) == 0, "reliable send queued");
+                next_send[i]++;
+            }
+            uint8_t u[8] = {'U'};
+            nl_send_unrel(&ends[i].l, u, 5, now, &o);
+            nl_tick(&ends[i].l, now, &o);
+        }
+        pump();
+        now += 5;
+        if (got_next[0] == (uint32_t)count && got_next[1] == (uint32_t)count && nl_idle(&ends[0].l) && nl_idle(&ends[1].l)) break;
+    }
+    while (nnet) free(net[--nnet]);
+}
+
+static void test_links(void)
+{
+    int count = 3000;
+    run_lossy(count, 600000);
+    CHECK(got_next[0] == (uint32_t)count && got_next[1] == (uint32_t)count, "all reliable messages arrived (%u / %u of %d)", got_next[0],
+          got_next[1], count);
+    CHECK(order_errors == 0, "reliable messages in order, once each (%d errors)", order_errors);
+    CHECK(nl_idle(&ends[0].l) && nl_idle(&ends[1].l), "everything acked");
+    printf("  30%% loss, 5%% duplicates, reordering: %d messages each way in %u simulated ms, %u resends, unreliable %u / %u delivered\n",
+           count, now - 1000, ends[0].l.n_resent + ends[1].l.n_resent, unrel_got[0], unrel_got[1]);
+    for (int i = 0; i < 2; i++) nl_free(&ends[i].l);
+
+    /* a receiver that refuses some messages at first: they are not acked and come again */
+    loss_pct = 10;
+    refuse_odd_once = 1;
+    refused = 0;
+    run_lossy(500, 600000);
+    CHECK(refused > 0, "some messages were refused");
+    CHECK(got_next[0] == 500 && got_next[1] == 500 && order_errors == 0, "refused messages came again and arrived in order");
+    refuse_odd_once = 0;
+    for (int i = 0; i < 2; i++) nl_free(&ends[i].l);
+
+    /* acks for a sequence never sent, a wrong token, a wrong peer: refused */
+    NetLink l;
+    nl_init(&l, 1, 2, 77, 3000, 0);
+    NetLinkOut o = {send_cb, &ends[0]};
+    NwHdr h = {NW_ACK, 2, 1, 77, 0, 5, 0};
+    CHECK(nl_on_packet(&l, &h, NULL, 0, 0, &o, check_cb, deliver_cb, &ends[0]) != 0, "ack of an unsent sequence refused");
+    h.ack = 0;
+    h.token = 78;
+    CHECK(nl_on_packet(&l, &h, NULL, 0, 0, &o, check_cb, deliver_cb, &ends[0]) != 0, "wrong token refused");
+    h.token = 77;
+    h.from = 3;
+    CHECK(nl_on_packet(&l, &h, NULL, 0, 0, &o, check_cb, deliver_cb, &ends[0]) != 0, "wrong peer refused");
+    h.from = 2;
+    h.type = NW_PING;
+    CHECK(nl_on_packet(&l, &h, (const uint8_t*)"abc", 3, 0, &o, check_cb, deliver_cb, &ends[0]) != 0, "short ping refused");
+    h.type = NW_ACK;
+    CHECK(nl_on_packet(&l, &h, NULL, 0, 0, &o, check_cb, deliver_cb, &ends[0]) == 0, "valid ack taken");
+    /* silence: dead after the timeout, alive before */
+    CHECK(nl_tick(&l, 2900, &o) == 0, "alive before the timeout");
+    CHECK(nl_tick(&l, 3100, &o) == 1, "dead after the timeout");
+    nl_free(&l);
+    while (nnet) free(net[--nnet]);
+}
+
+int main(void)
+{
+    printf("test_net: wire format\n");
+    test_wire();
+    printf("test_net: links\n");
+    test_links();
+    printf("test_net: %d checks, %d failed\n", checks, fails);
+    return fails ? 1 : 0;
+}

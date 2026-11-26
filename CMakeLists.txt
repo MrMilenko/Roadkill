@@ -47,6 +47,9 @@ target_include_directories(roadkill PRIVATE src src/rt third_party/dr_libs)
 # the CD music decoders (third_party/dr_libs, public domain / MIT-0) build without warnings shown
 set_source_files_properties(src/host/cd_music.c PROPERTIES COMPILE_OPTIONS "-w")
 target_link_libraries(roadkill PRIVATE indeo ${ROADKILL_SDL} Threads::Threads m)
+if(WIN32)
+    target_link_libraries(roadkill PRIVATE ws2_32)   # network play (src/host/net)
+endif()
 if(MINGW)
     # one roadkill.exe beside SDL2.dll: the C runtime pieces (winpthread, libgcc) linked in
     target_link_options(roadkill PRIVATE -static -static-libgcc)
@@ -66,6 +69,14 @@ endif()
 add_executable(test_movie tools/test_movie.c src/host/movies/avi.c)
 target_include_directories(test_movie PRIVATE src)
 target_link_libraries(test_movie PRIVATE indeo)
+
+# tools/test_net: the network transport and its packet checks on their own (reliable delivery
+# under loss, malformed packets refused); `ctest` or ./build/test_net
+add_executable(test_net tools/test_net.c src/host/net/net_wire.c src/host/net/net_link.c)
+target_include_directories(test_net PRIVATE src)
+target_compile_options(test_net PRIVATE ${ROADKILL_WARNINGS})
+enable_testing()
+add_test(NAME net COMMAND test_net)
 
 # The x87 float code the game was verified against: no fused multiply-adds anywhere, and the trig
 # at the x87 helper boundary must stay separate sin / cos calls (docs/RUNTIME.md).

@@ -62,8 +62,14 @@ static const Key keys[] = {
 
     {"input.controller", "TM2_NOJOY", ENV_INVERT, "1", "1: game controllers work as joysticks, and the game uses a connected one without a visit to its input screen first\n; 0: no controllers"},
 
+    {"net.port", "TM2_NET_PORT", ENV_VALUE, "27420", "the UDP port network play listens on (the next free one when it is taken, up to 9 more);\n; LAN games are looked for on this port and the next 3"},
+    {"net.join", "TM2_NET_JOIN", ENV_VALUE, "", "a host to look for sessions at directly, host:port (a name or an address; empty: the local network only)"},
+    {"net.lan", "TM2_NET_LAN", ENV_VALUE, "1", "1: look for sessions on the local network (a broadcast while the join screen is open)"},
+    {"net.timeout", "TM2_NET_TIMEOUT", ENV_VALUE, "10", "seconds without a word from another machine before it is dropped from the session"},
+
     {"gameplay.loop_music", "TM2_LOOP_MUSIC", ENV_VALUE, "0", "1: a level's CD track starts again at once when it ends (the original's CD monitor restarts it after up to 3 seconds of silence)"},
     {"gameplay.fix_crashes", "TM2_FIX_CRASHES", ENV_VALUE, "0", "1: guard the original's own crash / hang bugs (docs/QOL.md lists them); 0: as the original"},
+    {"gameplay.net_drop_stale", "TM2_NET_DROP_STALE", ENV_VALUE, "0", "1: network play drops another car's state packet that arrives after a newer one (0: as DirectPlay, late packets snap the car back)"},
 
     {"debug.keep_active", "TM2_KEEP_ACTIVE", ENV_PRESENT, "0", "1: the game never sees the window deactivate (the original pauses)"},
     {"debug.keys", "TM2_KEYS", ENV_VALUE, "", "scripted key presses frame:KEY[:hold], ... (src/host/win32_keys.c)"},
@@ -81,6 +87,7 @@ static const Key keys[] = {
     {"debug.debug", "TM2_DEBUG", ENV_VALUE, "0", "1: the game's debug prints on stderr"},
     {"debug.dx_log", "TM2_DX_LOG", ENV_VALUE, "0", NULL},
     {"debug.cd_log", "TM2_CD_LOG", ENV_VALUE, "0", NULL},
+    {"debug.net_log", "TM2_NET_LOG", ENV_VALUE, "0", "1: the network provider's log (sessions, peers, players, refused packets) on stderr"},
     {"debug.trace_files", "TM2_TRACE_FILES", ENV_PRESENT, "0", NULL},
     {"debug.pad", "TM2_PAD", ENV_VALUE, "", "the virtual pad's script (src/host/input_joy.c)"},
     {"debug.pad_log", "TM2_PAD_LOG", ENV_PRESENT, "0", NULL},
@@ -93,6 +100,7 @@ static const char* const sections[][2] = {
     {"audio", "Sound"},
     {"paths", "Where things are"},
     {"input", "Controllers"},
+    {"net", "Network play (Multi Player)"},
     {"gameplay", "Changes to the original game, each off by default"},
     {"debug", "Tests and diagnosis (remove the ; to use one)"},
 };

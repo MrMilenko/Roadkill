@@ -79,6 +79,11 @@ uint32_t dx_unk_release(const uint32_t* a, int n);
 /* a QueryInterface that needs a new object: returns 1 when handled (*hr set) */
 extern int (*dx_qi_hook)(DxObj* o, uint32_t iid_data1, uint32_t out, uint32_t* hr);
 
+/* PF2_COM(PF2_IUNK, slot) for slots past IUnknown's (0x10 / 0x30 / 0x74: the pf8 ports' DirectPlay
+ * calls) are bound to a dispatch that looks the object up and calls its own vtable's entry: the
+ * same slot is a different method on different interfaces (0x30: IDirectPlay::EnumGroups,
+ * IDirectPlay3A::EnumPlayers). */
+
 /* calls a game callback (Watcom function with stdcall stack words, as the generated bindings
  * read them: a[4 + i]) with up to 6 stack words */
 uint32_t dx_call_cb(uint32_t fn, const uint32_t* words, int nwords);

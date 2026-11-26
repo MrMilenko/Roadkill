@@ -53,7 +53,9 @@ static uint32_t not_implemented(const uint32_t* a, int n)
 
 void dx_iface_build(DxIface* i, const DxMethod* m, int nm, int nslots, int pf2_iface)
 {
-    uint32_t vt = rt_fake_alloc(4u * (uint32_t)nslots);
+    /* the slot count in the word before the vtable (unk_dispatch checks it) */
+    uint32_t vt = rt_fake_alloc(4u * (uint32_t)nslots + 4u) + 4u;
+    rt_w32(vt - 4u, (uint32_t)nslots);
     uint32_t code = rt_fake_alloc(4u * (uint32_t)nslots);
     for (int s = 0; s < nslots; s++) {
         uint32_t slot = 4u * (uint32_t)s, entry = code + slot;
@@ -164,12 +166,31 @@ uint32_t dx_call_cb(uint32_t fn, const uint32_t* words, int nwords)
     return rt_call(fn, words, nwords);
 }
 
+/* PF2_COM(PF2_IUNK, slot): the object's own method at that slot */
+static uint32_t unk_dispatch(uint32_t slot, const uint32_t* a, int n)
+{
+    DxObj* o = dx_obj_get(dx_arg(a, n, 0), NULL);
+    if (!o || slot / 4 >= rt_r32(o->iface->vtable - 4u)) {
+        rt_stop("IUnknown slot call on something that is not a host object with that slot", slot);
+        return DX_E_POINTER;
+    }
+    return rt_call(rt_r32(o->iface->vtable + slot), a, n);
+}
+static uint32_t unk_10(const uint32_t* a, int n) { return unk_dispatch(0x10, a, n); }
+static uint32_t unk_30(const uint32_t* a, int n) { return unk_dispatch(0x30, a, n); }
+static uint32_t unk_74(const uint32_t* a, int n) { return unk_dispatch(0x74, a, n); }
+
 static void rt_bind_host_dx_com(void)
 {
     /* IUnknown on any host object, for ports that call PF2_COM(PF2_IUNK, slot) */
     rt_bind(PF2_COM(PF2_IUNK, 0), dx_unk_qi, "IUnknown::QueryInterface");
     rt_bind(PF2_COM(PF2_IUNK, 4), dx_unk_addref, "IUnknown::AddRef");
     rt_bind(PF2_COM(PF2_IUNK, 8), dx_unk_release, "IUnknown::Release");
+    /* the pf8 ports' DirectPlay calls: the boot probe's v1 Close (pf8_boot.c), v3A EnumPlayers
+     * (pf8_dplay.c), v3A SetPlayerData (pf8_netrun.c, pf8_netstart.c) */
+    rt_bind(PF2_COM(PF2_IUNK, 0x10), unk_10, "IUnknown slot 0x10 (by object)");
+    rt_bind(PF2_COM(PF2_IUNK, 0x30), unk_30, "IUnknown slot 0x30 (by object)");
+    rt_bind(PF2_COM(PF2_IUNK, 0x74), unk_74, "IUnknown slot 0x74 (by object)");
 }
 
 RT_BIND_AREA(host_dx_com)

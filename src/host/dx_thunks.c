@@ -5,6 +5,11 @@
  * a thunk forwards its stdcall words to whatever is bound at the slot. Each is bound only after
  * checking that the bytes at the thunk are `ff 25 <slot>` in the player's EXE.
  *
+ * The DirectPlay thunks are also called by pf8_boot.c's call_n, which passes the four registers
+ * (eax, edx, ebx, ecx) before the stack words, as its emulator harness recorded them: a thunk
+ * whose import takes k stdcall words forwards the last k (the registers mean nothing to a
+ * `jmp [slot]`).
+ *
  * (If the core comes to bind every `jmp [slot]` thunk generically, this file goes away: binding
  * an address twice stops the run at start up.)
  */
@@ -15,8 +20,11 @@
 
 THUNK(t_dsound_create, 0x004d18e4u, 0x00c907b0u)
 THUNK(t_ddraw_create, 0x004d18eau, 0x00c907c0u)
-THUNK(t_dplay_enumerate, 0x004d1902u, 0x00c907d4u)
-THUNK(t_dplay_create, 0x004d1908u, 0x00c907d8u)
+#define THUNK_K(name, thunk, slot, k) \
+    static uint32_t name(const uint32_t* a, int n) { return n > (k) ? rt_call(slot, a + (n - (k)), (k)) : rt_call(slot, a, n); }
+
+THUNK_K(t_dplay_enumerate, 0x004d1902u, 0x00c907d4u, 2)   /* (callback, context) */
+THUNK_K(t_dplay_create, 0x004d1908u, 0x00c907d8u, 3)      /* (GUID*, IDirectPlay**, outer) */
 THUNK(t_dinput_create, 0x004d1914u, 0x00c90810u)
 
 static void bind_thunk(uint32_t thunk, uint32_t slot, RtFn fn, const char* name)
