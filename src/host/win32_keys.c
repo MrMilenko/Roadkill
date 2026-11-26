@@ -9,6 +9,8 @@
  *       an SDL_KEYDOWN / SDL_KEYUP event (the message loop turns it into WM_KEYDOWN / UP) and is
  *       seen in the keyboard state every reader uses, host_keyboard_state() (DirectInput's
  *       keyboard, GetAsyncKeyState).
+ *       KEY "click/X/Y" is a left mouse click at game pixel (X, Y) instead (button down at
+ *       `frame`, up after `hold` frames), e.g. "1100:click/150/120".
  *   TM2_SHOT_EVERY=N  saves the presented frame every N frames as <dir>/NNNNN.bmp, dir =
  *       TM2_SHOT_DIR (default "shots", created).
  *   TM2_KEYS_LOG=1  logs each scripted press and release.
@@ -29,7 +31,7 @@
 #include <sys/stat.h>
 #include "host/os/os.h"
 
-typedef struct { int frame, hold; SDL_Scancode sc; int state; int down_frame; } Press;   /* state 0 wait, 1 down, 2 done */
+typedef struct { int frame, hold; SDL_Scancode sc; int state; int down_frame; int click, mx, my; } Press;   /* state 0 wait, 1 down, 2 done */
 static Press presses[256];
 static int npress, parsed;
 static uint8_t scripted[SDL_NUM_SCANCODES];
@@ -64,9 +66,14 @@ static void parse(void)
         *f1++ = 0;
         char* f2 = strchr(f1, ':');
         if (f2) *f2++ = 0;
+        if (!strncasecmp(f1, "click/", 6)) {
+            int mx = atoi(f1 + 6), my = strchr(f1 + 6, '/') ? atoi(strchr(f1 + 6, '/') + 1) : 0;
+            presses[npress++] = (Press){atoi(item), f2 ? atoi(f2) : 4, SDL_SCANCODE_UNKNOWN, 0, 0, 1, mx, my};
+            continue;
+        }
         SDL_Scancode sc = key_of(f1);
         if (sc == SDL_SCANCODE_UNKNOWN) { fprintf(stderr, "tm2 host: TM2_KEYS: unknown key %s\n", f1); continue; }
-        presses[npress++] = (Press){atoi(item), f2 ? atoi(f2) : 4, sc, 0, 0};
+        presses[npress++] = (Press){atoi(item), f2 ? atoi(f2) : 4, sc, 0, 0, 0, 0, 0};
     }
     if (settings_int("debug.shot_every", 0) > 0) {
         shot_every = settings_int("debug.shot_every", 0);
@@ -89,6 +96,42 @@ static void push(SDL_Scancode sc, int down)
     SDL_PushEvent(&ev);
     scripted[sc] = (uint8_t)down;
     if (settings_bool("debug.keys_log", 0)) fprintf(stderr, "tm2 host: key %s %s\n", SDL_GetScancodeName(sc), down ? "down" : "up");
+}
+
+/* a scripted mouse click: the pointer moves there, then the left button */
+static void push_mouse(int x, int y, int down)
+{
+    SDL_Window* w = win32_sdl_window();
+    /* the renderer's event watch maps window pixels to its logical size for pushed events too:
+     * give it window pixels */
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+    SDL_Renderer* r = w ? SDL_GetRenderer(w) : NULL;
+    if (r) {
+        int wx, wy;
+        SDL_RenderLogicalToWindow(r, (float)x + 0.5f, (float)y + 0.5f, &wx, &wy);
+        x = wx;
+        y = wy;
+    }
+#endif
+    SDL_Event ev;
+    memset(&ev, 0, sizeof ev);
+    ev.type = SDL_MOUSEMOTION;
+    ev.motion.windowID = w ? SDL_GetWindowID(w) : 0;
+    ev.motion.x = x;
+    ev.motion.y = y;
+    ev.motion.timestamp = SDL_GetTicks();
+    SDL_PushEvent(&ev);
+    memset(&ev, 0, sizeof ev);
+    ev.type = down ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+    ev.button.windowID = w ? SDL_GetWindowID(w) : 0;
+    ev.button.button = SDL_BUTTON_LEFT;
+    ev.button.state = down ? SDL_PRESSED : SDL_RELEASED;
+    ev.button.clicks = 1;
+    ev.button.x = x;
+    ev.button.y = y;
+    ev.button.timestamp = SDL_GetTicks();
+    SDL_PushEvent(&ev);
+    if (settings_bool("debug.keys_log", 0)) fprintf(stderr, "tm2 host: click %d,%d %s\n", x, y, down ? "down" : "up");
 }
 
 /* a key held by something other than the keyboard (the Xbox's pad in the menus: port/xbox) */
@@ -123,8 +166,14 @@ static void schedule(int frame)
 {
     for (int i = 0; i < npress; i++) {
         Press* p = &presses[i];
-        if (p->state == 0 && frame >= p->frame) { push(p->sc, 1); p->state = 1; p->down_frame = frame; }
-        else if (p->state == 1 && frame >= (int)p->down_frame + p->hold) { push(p->sc, 0); p->state = 2; }
+        if (p->state == 0 && frame >= p->frame) {
+            if (p->click) push_mouse(p->mx, p->my, 1); else push(p->sc, 1);
+            p->state = 1;
+            p->down_frame = frame;
+        } else if (p->state == 1 && frame >= (int)p->down_frame + p->hold) {
+            if (p->click) push_mouse(p->mx, p->my, 0); else push(p->sc, 0);
+            p->state = 2;
+        }
     }
 }
 
