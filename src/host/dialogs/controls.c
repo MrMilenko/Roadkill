@@ -546,7 +546,26 @@ static int listbox_proc(DlgWin* w, uint32_t msg, uint32_t wp, uint32_t lp, uint3
     case 0x185: if ((int32_t)lp >= -1 && wp) w->sel = (int32_t)lp; w->dirty = 1; *res = 0; return 1;   /* LB_SETSEL */
     case 0x186:                                                    /* LB_SETCURSEL */
         if ((int32_t)wp < 0 || (int)wp >= w->nitems) { w->sel = -1; w->dirty = 1; *res = 0xffffffffu; return 1; }
-        w->sel = (int)wp; list_show(w, rows); w->dirty = 1; *res = wp; return 1;
+    {
+        int was = w->sel;
+        w->sel = (int)wp; list_show(w, rows); w->dirty = 1; *res = wp;
+#ifdef ROADKILL_XBOX
+        /* The Xbox has no mouse to click a row: a selection the game makes itself is announced
+         * as a click's (LBN_SELCHANGE). The join screen selects its first session with
+         * LB_SETCURSEL and fills its info panel and enables Join only when told; on the PC the
+         * player's click tells it. Only when the selection changes, never from inside the
+         * game's own handling of the notification. */
+        static int notifying;
+        if (was != w->sel && notify >= 0 && !notifying) {
+            notifying = 1;
+            dlg_notify(w->hwnd, (uint32_t)notify);
+            notifying = 0;
+        }
+#else
+        (void)was;
+#endif
+        return 1;
+    }
     case 0x187: *res = (int)wp == w->sel; return 1;                /* LB_GETSEL */
     case 0x188: *res = (uint32_t)w->sel; return 1;                 /* LB_GETCURSEL */
     case 0x189:                                                    /* LB_GETTEXT */
