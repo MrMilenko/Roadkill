@@ -10,7 +10,11 @@
 #undef SDL_RenderSetLogicalSize
 #undef SDL_RenderGetLogicalSize
 #undef SDL_RenderCopy
+#undef SDL_RenderPresent
 #include <SDL.h>
+
+/* the pad's mouse cursor (xbox_main.c): game pixels, drawn while xbox_cursor_on */
+int xbox_cursor_x = 320, xbox_cursor_y = 240, xbox_cursor_on;
 
 static int lw, lh;
 
@@ -83,4 +87,46 @@ int rk_SDL_RenderCopy(SDL_Renderer* r, SDL_Texture* t, const SDL_Rect* src, cons
         SDL_RenderSetViewport(r, &vp);
     }
     return SDL_RenderCopy(r, t, src, &out);
+}
+
+/* the cursor: a small arrow, white with a black edge, its tip at the position; game pixels mapped
+ * to the screen as rk_SDL_RenderCopy maps the picture */
+static void draw_cursor(SDL_Renderer* r)
+{
+    static const char* shape[] = {
+        "X", "XX", "XoX", "XooX", "XoooX", "XooooX", "XoooooX", "XooooooX", "XoooooXXX", "XooXooX",
+        "XoX XooX", "XX  XooX", "X    XooX", "     XooX", "      XX",
+    };
+    int sw, sh, gw = lw > 0 ? lw : 640, gh = lh > 0 ? lh : 480, row, col;
+    float pw, sx, sy, x0, y0;
+    SDL_Rect vp;
+    if (!xbox_cursor_on) return;
+    screen_size(r, &sw, &sh);
+    pw = sw * (4.0f / 3.0f) / display_aspect(sw, sh);
+    if (pw > sw) pw = (float)sw;
+    sx = pw / gw;
+    sy = (float)sh / gh;
+    x0 = (sw - pw) / 2 + xbox_cursor_x * sx;
+    y0 = xbox_cursor_y * sy;
+    vp.x = 0; vp.y = 0; vp.w = sw; vp.h = sh;
+    SDL_RenderSetViewport(r, &vp);
+    for (row = 0; row < (int)(sizeof shape / sizeof shape[0]); row++)
+        for (col = 0; shape[row][col]; col++) {
+            SDL_Rect px;
+            char c = shape[row][col];
+            if (c == ' ') continue;
+            px.x = (int)(x0 + col * sx);
+            px.y = (int)(y0 + row * sy);
+            px.w = (int)(sx + 0.99f);
+            px.h = (int)(sy + 0.99f);
+            if (c == 'X') SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
+            else SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+            SDL_RenderFillRect(r, &px);
+        }
+}
+
+void rk_SDL_RenderPresent(SDL_Renderer* r)
+{
+    draw_cursor(r);
+    SDL_RenderPresent(r);
 }

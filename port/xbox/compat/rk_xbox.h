@@ -46,6 +46,8 @@ FILE* rk_fopen(const char* path, const char* mode);
 #define SDL_RenderSetLogicalSize rk_SDL_RenderSetLogicalSize
 #define SDL_RenderGetLogicalSize rk_SDL_RenderGetLogicalSize
 #define SDL_RenderCopy rk_SDL_RenderCopy
+/* the pad's mouse cursor is drawn over each frame (xbox_screen.c) */
+#define SDL_RenderPresent rk_SDL_RenderPresent
 
 /* the log (D:\roadkill.log, also stderr's file) and a stop with a message on the screen */
 void rk_log(const char* fmt, ...);

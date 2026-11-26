@@ -214,6 +214,43 @@ static uint32_t hwnd_of_sdl(uint32_t id)
     return main_hwnd;
 }
 
+/* the mouse at (x, y) in window h's client area: the position GetCursorPos answers, and
+ * WM_MOUSEMOVE to the control under it */
+static void mouse_move(uint32_t h, int32_t x, int32_t y)
+{
+    Win* w = win(h);
+    mouse_x = x + (w ? w->x : 0);
+    mouse_y = y + (w ? w->y : 0);
+    int32_t mx = x, my = y;
+    if (!(h = w32dlg_mouse_target(h, &mx, &my, 0))) return;   /* the control under the cursor */
+    post(1, h, 0x200, mk_flags(), (uint32_t)(mx & 0xffff) | (uint32_t)my << 16);
+}
+
+/* SDL button b went down / up at (x, y) in window h's client area */
+static void mouse_button(uint32_t h, int b, int down, int clicks, int32_t x, int32_t y)
+{
+    if (down) buttons |= SDL_BUTTON(b); else buttons &= ~SDL_BUTTON(b);
+    uint32_t m = b == SDL_BUTTON_LEFT ? 0x201 : b == SDL_BUTTON_RIGHT ? 0x204 : b == SDL_BUTTON_MIDDLE ? 0x207 : 0;
+    if (!m) return;
+    if (!down) m += 1;
+    else if (clicks == 2) m += 2;   /* WM_*BUTTONDBLCLK */
+    int32_t mx = x, my = y;
+    h = w32dlg_mouse_target(h, &mx, &my, down);
+    if (h) post(1, h, m, mk_flags(), (uint32_t)(mx & 0xffff) | (uint32_t)my << 16);
+}
+
+/* A mouse with no SDL events behind it (port/xbox: the pad is the mouse in the menus, as the
+ * Fallout 2 Xbox port's): the main window's client coordinates, the left button's state. Called
+ * on the game's thread (from PeekMessageA). */
+void w32_device_mouse(int32_t x, int32_t y, int left)
+{
+    static int32_t lx = -1, ly = -1;
+    uint32_t h = main_hwnd;
+    if (!h) return;
+    if (x != lx || y != ly) { mouse_move(h, x, y); lx = x; ly = y; }
+    if (!!(buttons & SDL_BUTTON_LMASK) != !!left) mouse_button(h, SDL_BUTTON_LEFT, left, 1, x, y);
+}
+
 static void pump(void)
 {
     if (sdl_ok != 1) return;
@@ -246,29 +283,13 @@ static void pump(void)
             post(1, to, m, vk, lp);
             break;
         }
-        case SDL_MOUSEMOTION: {
-            uint32_t h = hwnd_of_sdl(ev.motion.windowID);
-            Win* w = win(h);
-            mouse_x = ev.motion.x + (w ? w->x : 0);
-            mouse_y = ev.motion.y + (w ? w->y : 0);
-            int32_t mx = ev.motion.x, my = ev.motion.y;
-            if (!(h = w32dlg_mouse_target(h, &mx, &my, 0))) break;   /* the control under the cursor */
-            post(1, h, 0x200, mk_flags(), (uint32_t)(mx & 0xffff) | (uint32_t)my << 16);
+        case SDL_MOUSEMOTION:
+            mouse_move(hwnd_of_sdl(ev.motion.windowID), ev.motion.x, ev.motion.y);
             break;
-        }
-        case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: {
-            int down = ev.type == SDL_MOUSEBUTTONDOWN;
-            int b = ev.button.button;
-            if (down) buttons |= SDL_BUTTON(b); else buttons &= ~SDL_BUTTON(b);
-            uint32_t m = b == SDL_BUTTON_LEFT ? 0x201 : b == SDL_BUTTON_RIGHT ? 0x204 : b == SDL_BUTTON_MIDDLE ? 0x207 : 0;
-            if (!m) break;
-            if (!down) m += 1;
-            else if (ev.button.clicks == 2) m += 2;   /* WM_*BUTTONDBLCLK */
-            int32_t mx = ev.button.x, my = ev.button.y;
-            uint32_t h = w32dlg_mouse_target(hwnd_of_sdl(ev.button.windowID), &mx, &my, down);
-            if (h) post(1, h, m, mk_flags(), (uint32_t)(mx & 0xffff) | (uint32_t)my << 16);
+        case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP:
+            mouse_button(hwnd_of_sdl(ev.button.windowID), ev.button.button, ev.type == SDL_MOUSEBUTTONDOWN,
+                         ev.button.clicks, ev.button.x, ev.button.y);
             break;
-        }
         case SDL_WINDOWEVENT: {
             uint32_t h = hwnd_of_sdl(ev.window.windowID);
             switch (ev.window.event) {

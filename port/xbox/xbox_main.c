@@ -67,6 +67,8 @@ int rk_SDL_SetWindowFullscreen(struct SDL_Window* w, unsigned flags) { (void)w; 
  * the arrow keys, A / START Enter, B / BACK Esc. */
 #include "rt/rt.h"
 void win32_keys_virtual(int sc, int down);
+void w32_device_mouse(int32_t x, int32_t y, int left);
+void dx_sdl_redraw(void);
 void xbox_pad_keys(void)
 {
     static SDL_GameController* pad;
@@ -97,6 +99,54 @@ void xbox_pad_keys(void)
     }
     SDL_GameControllerUpdate();
     memset(now, 0, sizeof now);
+    if (!drive) {
+        /* The pad is the mouse in the menus (the network screens are the PC's mouse driven
+         * dialogs), as in the Fallout 2 Xbox port: the left stick moves the cursor and A is the
+         * left button while it shows; they go straight to the host's mouse (w32_device_mouse), no
+         * input events made up. A d-pad press or 4 s without moving hides it, and A is Enter
+         * again. */
+        extern int xbox_cursor_x, xbox_cursor_y, xbox_cursor_on;
+        static uint32_t last_t, moved_t;
+        static float fx = 320, fy = 240;
+        static int a_held;
+        int ax = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTX);
+        int ay = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTY);
+        int a = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_A);
+        int dpad = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_UP) ||
+                   SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_DOWN) ||
+                   SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_LEFT) ||
+                   SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
+        float dt = last_t ? (t - last_t) / 1000.0f : 0;
+        last_t = t;
+        if (dt > 0.1f) dt = 0.1f;
+        if (ax > 7000 || ax < -7000 || ay > 7000 || ay < -7000) {
+            float vx = ax / 32767.0f, vy = ay / 32767.0f;
+            /* faster the further the stick goes: up to 600 game pixels a second */
+            fx += vx * (vx < 0 ? -vx : vx) * 600 * dt;
+            fy += vy * (vy < 0 ? -vy : vy) * 600 * dt;
+            fx = fx < 0 ? 0 : fx > 639 ? 639 : fx;
+            fy = fy < 0 ? 0 : fy > 479 ? 479 : fy;
+            if ((int)fx != xbox_cursor_x || (int)fy != xbox_cursor_y || !xbox_cursor_on) {
+                xbox_cursor_x = (int)fx;
+                xbox_cursor_y = (int)fy;
+                xbox_cursor_on = 1;
+                dx_sdl_redraw();   /* a menu waiting for input presents nothing: the cursor shows anyway */
+            }
+            moved_t = t;
+        }
+        if (xbox_cursor_on && !a_held && (dpad || t - moved_t > 4000)) {
+            xbox_cursor_on = 0;
+            dx_sdl_redraw();
+        }
+        if (xbox_cursor_on || a_held) {
+            if (a != a_held) moved_t = t;
+            a_held = a;
+            w32_device_mouse(xbox_cursor_x, xbox_cursor_y, a);
+            for (i = 0; i < sizeof menu / sizeof menu[0]; i++)   /* the other buttons as keys; A is the click */
+                if (menu[i].b != SDL_CONTROLLER_BUTTON_A && SDL_GameControllerGetButton(pad, menu[i].b)) now[menu[i].sc] = 1;
+            goto keys;
+        }
+    }
     if (drive) {
         for (i = 0; i < sizeof driving / sizeof driving[0]; i++)
             if (SDL_GameControllerGetButton(pad, driving[i].b)) now[driving[i].sc] = 1;
@@ -104,6 +154,7 @@ void xbox_pad_keys(void)
         for (i = 0; i < sizeof menu / sizeof menu[0]; i++)
             if (SDL_GameControllerGetButton(pad, menu[i].b)) now[menu[i].sc] = 1;
     }
+keys:
     /* a key held when the mode changes is let go (a held A doesn't stay Enter into the match) */
     for (i = 0; i < SDL_NUM_SCANCODES; i++)
         if (now[i] != held[i]) { win32_keys_virtual((int)i, now[i]); held[i] = now[i]; }
