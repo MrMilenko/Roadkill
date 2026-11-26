@@ -131,6 +131,11 @@ void __cdecl main(void)
         HANDLE h = CreateThread(NULL, 0x4000, memory_watch, NULL, 0, &id);
         if (h) CloseHandle(h);
     }
+    /* the network: XNet's DHCP runs while the game loads (xbox_net.c) */
+    {
+        void xbox_net_start(void);
+        xbox_net_start();
+    }
     /* SDL's video up first, so the screen mode is the game's 480 lines (xbox_screen.c) */
     {
         void xbox_screen_mode(void);

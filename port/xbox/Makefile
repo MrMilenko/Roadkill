@@ -38,7 +38,9 @@ RK_FLAGS = -std=gnu99 -Xclang -fdefault-calling-conv=cdecl -ffp-contract=off \
 CFLAGS   += -include $(CURDIR)/compat/stdarg.h $(SDL2X_DEFINES) $(SDL2X_INCLUDES)
 CXXFLAGS += -include $(CURDIR)/compat/stdarg.h $(SDL2X_DEFINES) $(SDL2X_INCLUDES)
 
-OXDK_LIBS = $(SDL2X_LIBS) oldnames.lib
+# xnet.lib (the devkit network library, not xnets.lib): it honours XNET_STARTUP_BYPASS_SECURITY,
+# which online play with PCs needs (xbox_net.c)
+OXDK_LIBS = $(SDL2X_LIBS) oldnames.lib xnet.lib
 # the main thread runs the whole game (the desktop gives it 8 MB): 2 MB here
 LDFLAGS  += /stack:0x200000
 OXDK_OPT  ?= -O2

@@ -1,8 +1,6 @@
 /*
  * net_sock.c: net_sock.h on POSIX sockets (macOS, Linux) and Winsock (Windows). Port code, not
- * from the original. ROADKILL_XBOX builds get the no-network branch until an XNet backend is
- * written: net_sock_init fails and the DirectPlay host then lists no service provider (the
- * Multi Player screen says so, as it did before network play existed).
+ * from the original. The original Xbox's (XNet) is port/xbox/xbox_net.c.
  */
 #define _DARWIN_C_SOURCE
 #define _DEFAULT_SOURCE
@@ -16,16 +14,7 @@
 
 #if defined(ROADKILL_XBOX)
 
-int net_sock_init(void) { return -1; }
-NetSock* net_sock_open(uint16_t port, int tries, uint16_t* bound) { (void)port; (void)tries; (void)bound; return NULL; }
-void net_sock_close(NetSock* s) { (void)s; }
-int net_sock_send(NetSock* s, const NetAddr* to, const void* p, int len) { (void)s; (void)to; (void)p; (void)len; return -1; }
-int net_sock_recv(NetSock* s, NetAddr* from, void* p, int cap, int timeout_ms)
-{ (void)s; (void)from; (void)p; (void)cap; (void)timeout_ms; return -1; }
-int net_addr_resolve(const char* text, uint16_t defport, NetAddr* out) { (void)text; (void)defport; (void)out; return -1; }
-int net_sock_local_ip(const NetAddr* toward, uint32_t* ip) { (void)toward; (void)ip; return -1; }
-uint32_t net_now_ms(void) { return (uint32_t)(clock() * 1000.0 / CLOCKS_PER_SEC); }
-void net_random(void* p, size_t n) { for (size_t i = 0; i < n; i++) ((uint8_t*)p)[i] = (uint8_t)rand(); }
+/* the original Xbox: port/xbox/xbox_net.c (XNet) */
 
 #else
 

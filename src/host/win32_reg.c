@@ -95,6 +95,24 @@ static void load(void)
  * title screen takes no keys. Seed the installer's state when a value is missing: keyboard on
  * (1), joystick and mouse off (2), the device flags 1. The key tables are not seeded: the game
  * restores its own defaults when they are missing. */
+#ifdef ROADKILL_XBOX
+/* The Xbox has no keyboard for the network setup screen's names: when missing, a driver name,
+ * an alias and the connection are filled in (REG_SZ with its NUL, as the game reads them). A name
+ * changed in the game stays. */
+static void seed_string(const char* k, const char* name, const char* text)
+{
+    if (val_find(k, name)) return;
+    vals = realloc(vals, sizeof(Val) * (size_t)(nvals + 1));
+    Val* v = &vals[nvals++];
+    v->key = strdup(k);
+    v->name = strdup(name);
+    v->type = 1;   /* REG_SZ */
+    v->size = (uint32_t)strlen(text) + 1;
+    v->data = malloc(v->size + 1);
+    memcpy(v->data, text, v->size);
+}
+#endif
+
 static void seed_defaults(void)
 {
     static const char* k = "HKLM\\Software\\Sony Interactive\\Twisted Metal 2\\1.0.1";
@@ -115,6 +133,11 @@ static void seed_defaults(void)
         v->data = malloc(5);
         for (int b = 0; b < 4; b++) v->data[b] = (uint8_t)(d[i].v >> (8 * b));
     }
+#ifdef ROADKILL_XBOX
+    seed_string(k, "NetPlayerName", "Xbox Player");
+    seed_string(k, "NetPlayerCallsign", "Xbox");
+    seed_string(k, "NetProviderName", "Internet TCP/IP Connection For DirectPlay");
+#endif
 }
 
 static void save(void)
