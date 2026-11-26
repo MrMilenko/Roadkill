@@ -603,6 +603,10 @@ static int listbox_proc(DlgWin* w, uint32_t msg, uint32_t wp, uint32_t lp, uint3
         } else {
             int k = w->top + y / line_h(w);
             if (k < w->nitems) {
+                /* a click notifies LBN_SELCHANGE even on the item already selected, as Windows'
+                 * list box does (the join screen's session list: the game selects item 0 with
+                 * LB_SETCURSEL, no notification, and fills its info panel only when told) */
+                if (k == w->sel && notify >= 0) dlg_notify(w->hwnd, (uint32_t)notify);
                 list_select(w, k, notify);
                 if (msg == 0x203 && notify > 0) dlg_notify(w->hwnd, 2);   /* LBN_DBLCLK */
             }
