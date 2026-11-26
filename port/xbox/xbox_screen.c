@@ -12,6 +12,7 @@
 #undef SDL_RenderCopy
 #undef SDL_RenderPresent
 #include <SDL.h>
+#include <string.h>
 
 /* the pad's mouse cursor (xbox_main.c): game pixels, drawn while xbox_cursor_on */
 int xbox_cursor_x = 320, xbox_cursor_y = 240, xbox_cursor_on;
@@ -89,40 +90,45 @@ int rk_SDL_RenderCopy(SDL_Renderer* r, SDL_Texture* t, const SDL_Rect* src, cons
     return SDL_RenderCopy(r, t, src, &out);
 }
 
-/* the cursor: a small arrow, white with a black edge, its tip at the position; game pixels mapped
- * to the screen as rk_SDL_RenderCopy maps the picture */
+/* the cursor: a small arrow, white with a black edge, its tip at the position. A texture drawn
+ * like the picture (SDL2x's renderer draws textures; its rectangle fills aren't relied on), game
+ * pixels mapped to the screen as rk_SDL_RenderCopy maps the picture */
 static void draw_cursor(SDL_Renderer* r)
 {
     static const char* shape[] = {
         "X", "XX", "XoX", "XooX", "XoooX", "XooooX", "XoooooX", "XooooooX", "XoooooXXX", "XooXooX",
         "XoX XooX", "XX  XooX", "X    XooX", "     XooX", "      XX",
     };
-    int sw, sh, gw = lw > 0 ? lw : 640, gh = lh > 0 ? lh : 480, row, col;
-    float pw, sx, sy, x0, y0;
-    SDL_Rect vp;
-    if (!xbox_cursor_on) return;
+    static SDL_Texture* tex;
+    static int failed;
+    int sw, sh, gw = lw > 0 ? lw : 640, gh = lh > 0 ? lh : 480;
+    float pw, sx, sy;
+    SDL_Rect vp, dst;
+    if (!xbox_cursor_on || failed) return;
+    if (!tex) {
+        Uint32 px[16 * 16];
+        int row, col;
+        memset(px, 0, sizeof px);
+        for (row = 0; row < (int)(sizeof shape / sizeof shape[0]); row++)
+            for (col = 0; shape[row][col]; col++)
+                if (shape[row][col] != ' ') px[row * 16 + col] = shape[row][col] == 'X' ? 0xff000000u : 0xffffffffu;
+        tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, 16, 16);
+        if (!tex) { rk_log("cursor: no texture (%s)", SDL_GetError()); failed = 1; return; }
+        SDL_UpdateTexture(tex, NULL, px, 16 * 4);
+        SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+    }
     screen_size(r, &sw, &sh);
     pw = sw * (4.0f / 3.0f) / display_aspect(sw, sh);
     if (pw > sw) pw = (float)sw;
     sx = pw / gw;
     sy = (float)sh / gh;
-    x0 = (sw - pw) / 2 + xbox_cursor_x * sx;
-    y0 = xbox_cursor_y * sy;
+    dst.x = (int)((sw - pw) / 2 + xbox_cursor_x * sx);
+    dst.y = (int)(xbox_cursor_y * sy);
+    dst.w = (int)(16 * sx + 0.5f);
+    dst.h = (int)(16 * sy + 0.5f);
     vp.x = 0; vp.y = 0; vp.w = sw; vp.h = sh;
     SDL_RenderSetViewport(r, &vp);
-    for (row = 0; row < (int)(sizeof shape / sizeof shape[0]); row++)
-        for (col = 0; shape[row][col]; col++) {
-            SDL_Rect px;
-            char c = shape[row][col];
-            if (c == ' ') continue;
-            px.x = (int)(x0 + col * sx);
-            px.y = (int)(y0 + row * sy);
-            px.w = (int)(sx + 0.99f);
-            px.h = (int)(sy + 0.99f);
-            if (c == 'X') SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
-            else SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-            SDL_RenderFillRect(r, &px);
-        }
+    SDL_RenderCopy(r, tex, NULL, &dst);
 }
 
 void rk_SDL_RenderPresent(SDL_Renderer* r)

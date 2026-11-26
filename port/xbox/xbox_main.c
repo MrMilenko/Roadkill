@@ -129,6 +129,7 @@ void xbox_pad_keys(void)
             if ((int)fx != xbox_cursor_x || (int)fy != xbox_cursor_y || !xbox_cursor_on) {
                 xbox_cursor_x = (int)fx;
                 xbox_cursor_y = (int)fy;
+                if (!xbox_cursor_on) rk_log("cursor: on at %d,%d", (int)fx, (int)fy);
                 xbox_cursor_on = 1;
                 dx_sdl_redraw();   /* a menu waiting for input presents nothing: the cursor shows anyway */
             }
@@ -139,7 +140,7 @@ void xbox_pad_keys(void)
             dx_sdl_redraw();
         }
         if (xbox_cursor_on || a_held) {
-            if (a != a_held) moved_t = t;
+            if (a != a_held) { moved_t = t; rk_log("cursor: A %s at %d,%d", a ? "down" : "up", xbox_cursor_x, xbox_cursor_y); }
             a_held = a;
             w32_device_mouse(xbox_cursor_x, xbox_cursor_y, a);
             for (i = 0; i < sizeof menu / sizeof menu[0]; i++)   /* the other buttons as keys; A is the click */
