@@ -1,9 +1,9 @@
 # Network play: what TM2.EXE asks of DirectPlay, and how the host can provide it
 
 Goal: online multiplayer that runs the 1997 network code as it is, with DirectPlay supplied by the
-host: a host side "Internet TCP/IP" service provider over UDP (src/host/net, section 6: LAN and
-direct IP games work between Roadkill instances) plus, later, a small announce / rendezvous
-server.
+host: a host side "Internet TCP/IP" service provider over UDP (src/host/net, section 6: LAN,
+direct IP and internet games between Roadkill instances) plus a small announce / rendezvous
+server (server/announce, the public one at roadkill.horrible.dev:27400).
 
 Everything below comes from the verified ports in src/ (emulator diffs against TM2.EXE) and the
 notes in the decomp repo's tools/names/verified.tsv. "Unknown" means the ported code does not
@@ -393,9 +393,10 @@ block the queue: keep every delivered message under 0x400 bytes (system messages
 - Interop with a real DirectPlay installation (an original TM2 on Windows) is not possible with
   this wire format and is not a goal.
 
-## 6. Status: what is built (milestone 1)
+## 6. Status: what is built (milestones 1 and 2)
 
-Multi Player works between Roadkill instances on a LAN or by address: the provider list, the
+Multi Player works between Roadkill instances on a LAN, by address, and over the internet
+through the announce server (section 6, "Internet play"): the provider list, the
 setup screen, hosting, the join screen's session list (with the session's players), joining,
 the lobby (both players listed, chat, ready, start), car select (the host grants cars), the
 round start barriers and the match with both cars, a player leaving or timing out (the others
@@ -413,6 +414,8 @@ network code is unchanged.
 | net_wire.c | the datagram format and its checked decoders (pure) |
 | net_discovery.c | the session cache EnumSessions reads and its sources (`NdSource`: a query and a datagram handler; "lan" and "direct" today, an announce server later, without touching the DirectPlay layer) |
 | net_sock.c | the only file that knows the socket API: POSIX sockets (macOS, Linux), Winsock (Windows, ws2_32), a no network branch for ROADKILL_XBOX (DirectPlayEnumerateA then lists no provider, as before) until an XNet backend replaces it |
+| net_announce.c | the announce server's side in the game: a session source (LIST, page by page), the host's REGISTER / WITHDRAW, JOIN, INTRO to the session layer; its name looked up on a thread of its own |
+| net_anwire.c | the announce server's datagrams (server/announce/announce_proto.h, shared): encoders and checked decoders (pure, tested in tools/test_net.c) |
 | net_log.c | `TM2_NET_LOG=1` |
 
 DPIDs are made by the machine that owns the player: `0x1TTTPPII` (12 bits of the session token,
@@ -431,7 +434,7 @@ answers ENUM / JOIN from then on and goes on numbering peers from the highest it
 
 ### Wire format (UDP, little endian)
 
-Header, 24 bytes: `u32 magic "RKNP"`, `u8 version (1)`, `u8 type`, `u8 from peer`, `u8 to peer`,
+Header, 24 bytes: `u32 magic "RKNP"`, `u8 version (2)`, `u8 type`, `u8 from peer`, `u8 to peer`,
 `u64 session token`, `u16 seq`, `u16 ack` (every reliable message below it has arrived), `u32 ack
 bits` (bit i: ack + 1 + i has arrived). Datagrams are at most 1200 bytes (no IP fragmentation).
 
@@ -439,10 +442,11 @@ bits` (bit i: ack + 1 + i has arrived). Datagrams are at most 1200 bytes (no IP 
 |---|---|---|
 | 1 ENUM_REQ | 0 | app GUID, compat word, padded to 320 bytes (an answer is never much bigger than the question) |
 | 2 ENUM_RESP | 0 | the session (guidInstance, app GUID, flags, max / current players, dwUser1..4, name, password required) and its players' DPIDs and names |
-| 3 JOIN_REQ | 0 | nonce, app GUID, guidInstance, compat word, password |
+| 3 JOIN_REQ | 0 | nonce, app GUID, guidInstance, compat word, password, the joiner's own LAN address |
 | 4 JOIN_ACCEPT | 0 | nonce, the session token, your peer number, the host's, the next peer number, the session |
 | 5 JOIN_REFUSE | 0 | nonce, the DPERR for Open (DPERR_INVALIDPASSWORD, DPERR_NONEWPLAYERS, DPERR_CANTADDPLAYER, ...) |
-| 16 REL | session | one reliable message: NM_GAME (from, to, the game's bytes: DPSEND_GUARANTEED), NM_PEER, NM_PEER_GONE, NM_PLAYER, NM_PLAYER_GONE, NM_PLAYER_DATA, NM_SESSION, NM_READY |
+| 6 PUNCH | 0 | u32 0 asks / 1 answers: opens NAT mappings before a join; only a host answers an ask, only a joiner waiting for one notes an answer, everything else is ignored |
+| 16 REL | session | one reliable message: NM_GAME (from, to, the game's bytes: DPSEND_GUARANTEED), NM_PEER (a member's address as the host sees it and its own LAN address), NM_PEER_GONE, NM_PLAYER, NM_PLAYER_GONE, NM_PLAYER_DATA, NM_SESSION, NM_READY |
 | 17 UNREL | session | one NM_GAME sent with flags 0 |
 | 18 ACK, 19 PING, 20 PONG, 21 BYE | session | acks only; keepalive (every second, answered by the socket thread, never by the game); leaving |
 
@@ -453,8 +457,11 @@ seconds (default 10) is dropped: DPSYS_DESTROYPLAYERORGROUP for its players. Clo
 in flight arrive (up to 300 ms), then sends BYE three times. SetPlayerData always goes
 reliable.
 
-`compat` is the gameplay settings every machine of a session must share (today
-`[gameplay] fix_crashes`): sessions that differ are not listed, and a join is refused.
+`compat` is the gameplay settings every machine of a session must share, a bit each (bit 0
+`[gameplay] fix_crashes`, bit 1 `[gameplay] net_drop_stale`): sessions that differ are not
+listed, and a join is refused. The announce server lists by `build` = `0x524b0000 | protocol
+version << 8 | compat` (`ns_build`), so other protocol versions and settings never see each
+other there either.
 
 ### Checks before anything reaches the game
 
@@ -488,10 +495,54 @@ but a hostile peer can still disturb the game, as with DirectPlay.
 | `[net] join` | empty | `TM2_NET_JOIN` | `host:port` (or a name) asked directly for its session, besides the LAN |
 | `[net] lan` | 1 | `TM2_NET_LAN` | look for sessions by broadcast on the LAN (to the port and the next 3, and to this machine) while the join screen is open |
 | `[net] timeout` | 10 | `TM2_NET_TIMEOUT` | seconds of silence before a machine is dropped |
+| `[net] announce` | `roadkill.horrible.dev:27400` | `TM2_NET_ANNOUNCE` | the announce server (empty: none, LAN and `[net] join` only) |
+| `[net] public` | 1 | `TM2_NET_PUBLIC` | 1: a session this machine hosts is announced there (a password still applies); 0: not |
 | `[gameplay] net_drop_stale` | 0 | `TM2_NET_DROP_STALE` | 1: a car state packet (type 0x22) older than the last one from that player is dropped; 0: delivered, as DirectPlay did |
 | `[debug] net_log` | 0 | `TM2_NET_LOG` | the provider's log: sessions, peers, players, system messages, guaranteed sends, link statistics every 5 s |
 
 27420 is Roadkill's own default (not DirectPlay's 47624: the protocol is not DirectPlay's).
+
+### Internet play (milestone 2: the announce server)
+
+`server/announce` (protocol `announce_proto.h`, shared with the game; the public server is
+`roadkill.horrible.dev:27400`) lists sessions and introduces a joiner and the host to each other;
+the game's traffic stays peer to peer. On the game's side (src/host/net/net_announce.c):
+
+- **The join list**: while the join screen calls EnumSessions, LIST (build = `ns_build`) goes to
+  the server every second from the game's socket, the next page asked as soon as one comes back
+  with more behind it (4 a page, up to 64 pages). Each session becomes a cache entry marked
+  "announced" with the host's public and LAN addresses: name, flags, max / current players,
+  dwUser1..4 exactly (the client's game mode and arena come from them), password required,
+  the players' names (the join screen's Current Drivers). A session also heard of on the LAN or
+  through `[net] join` keeps that direct path.
+- **The host**: while a session is open and `[net] public = 1`, REGISTER every 5 s (1 s after
+  a change: players, flags) from the game's own socket, so the address the server records is
+  the one its NAT maps for the players, with the host's LAN address (`local`: the address of the
+  interface toward the server, net_sock_local_ip) and the current players' names; WITHDRAW at
+  Close (after the flush). A migrated host registers the session from its own address; the
+  server takes that only from the same public IP as the old host, otherwise the entry returns
+  after the old one expires (15 s).
+- **A join** of an announced session: JOIN to the server (with our LAN address), resent every
+  second until its INTRO comes (after 4 s the listed addresses are tried anyway). On INTRO both
+  sides punch: the joiner sends PUNCH asks to the host's public and LAN addresses every 200 ms,
+  the host (its INTRO names the joiner) to the joiner's two, for 5 s. The host answers every
+  ask; the JOIN_REQ goes to the address that answered, the LAN one when both do (300 ms grace for
+  it after a public answer), the public one when none did within 5 s. Then the join is the LAN
+  one. Two players behind one router (the server sees them at the same public IP) meet on their
+  LAN addresses; that also needs no hairpin NAT.
+- **The mesh**: the host tells every member each other member's address as the host sees it
+  and its own LAN address (from its JOIN_REQ). A member with two addresses for another sends to
+  both until a packet arrives: from the LAN address, that one is kept; from the other, the LAN one
+  still has 300 ms; probing ends after 5 s. Both sides do this at once, which punches their NATs
+  for each other. A pair that cannot reach each other at all is not relayed (out of scope): its
+  members time each other out.
+- **Checks**: datagrams in the announce protocol are taken only from the server's address, at
+  the exact size of their type, with magic and version; SESSIONS with count <= AN_PAGE and <= the
+  total; each session's strings NUL terminated within their fields (else it is left out), forced
+  printable, max players 1..8, current <= max, password 0 / 1, the build ours, a usable public
+  address (not 0, broadcast, multicast or 0.x.x.x); an unusable LAN address is dropped. INTRO
+  only with arg 0 / 1, a usable address, for the session we host or join. tools/test_net.c covers
+  them.
 
 ### Testing
 
@@ -513,15 +564,23 @@ but a hostile peer can still disturb the game, as with DirectPlay.
   in the lobby (the joiner becomes the host), `[net] join = localhost:27500` with `[net] lan = 0`,
   and 3000 junk / forged datagrams at a hosting instance (all refused, the game unaffected).
 - The MinGW cross build compiles (ws2_32); not run on Windows yet.
+- Milestone 2, against the live server, with `[net] lan = 0` so only the server could find the
+  session: two instances on one Mac (one public IP): the host registered (public
+  170.103.2.26:27421, LAN 192.168.40.189:27421), the joiner listed it with its arena, mode and
+  driver, got the INTRO, its punch was answered from the host's LAN address and it joined there;
+  lobby, car select and match as on the LAN. Three instances: the third joined through the
+  server, all three in the lobby, then the host left (Main Menu): it withdrew, the oldest member
+  became the host and registered the session again from its own port. tools/test_net.c checks
+  the announce datagrams (round trip of what the host registers, refusals).
 
 ### Not done yet
 
-- The announce / rendezvous server and NAT traversal: the mesh works where the machines can
-  reach each other's addresses as the host sees them (a LAN, forwarded ports, NATs that keep
-  a mapping per local port: both sides ping each other at once, which opens most of them). No
-  relay for a pair that cannot connect. IPv4 only.
-- More than two machines, real networks with loss and latency, and a Windows build in play:
-  untested (the transport's loss handling is only tested in tools/test_net.c).
+- Machines behind different NATs on the real internet: the punching is in, but only the
+  one-router case was tried (every instance here shares one public IP). Symmetric NATs (a new
+  mapping per destination) will not punch; there is no relay for a pair that cannot connect.
+  IPv4 only.
+- Real networks with loss and latency, and a Windows build in play: untested (the transport's
+  loss handling is only tested in tools/test_net.c).
 - A whole match to its end and a next round: the round end stats exchange is not seen yet.
 - Password protected sessions are listed (DPSESSION_PASSWORDREQUIRED set) and Open checks the
   password; whether DirectX 5 hid them from EnumSessions without a matching password is still
@@ -543,6 +602,13 @@ but a hostile peer can still disturb the game, as with DirectPlay.
   src/match/mt2_netui.c:191-193).
 - CreatePlayer's DPNAME is short = the "Driver Alias" (callsign), long = the "Driver Name"
   (src/engine/en4_io.c:192); the lobby's Player Name column shows the long name.
+- The join screen selects its first session with LB_SETCURSEL (no notification) and fills its
+  info panel only on LBN_SELCHANGE: with sessions listed at once (no 1 s EnumSessions wait any
+  more) the first one was already selected and a click on it did nothing; the list box host now
+  notifies a click on the selected item too, as Windows does (src/host/dialogs/controls.c).
+- The Current Drivers list's sprintf call in session_listbox_sync's port passes eax / edx
+  before the stack words (src/engine/en7_d.c:167); the binding drops them
+  (src/rt/bind_engine_win.c), the list showed empty rows before.
 - EnumSessions runs on the IDirectPlay3A at the session record's +0 (vtable read from game
   memory, src/engine/en7_a.c:158) from the game's own thread while the main thread pumps; the
   session callback copies the name with lstrcpyA (src/engine/en7_g.c:102), so names are kept

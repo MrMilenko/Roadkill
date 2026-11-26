@@ -41,6 +41,8 @@ through `src/host/settings/settings.h` (`settings_int` / `settings_str` / `setti
 | `[net] port` | 27420 | `TM2_NET_PORT` | network play's UDP port (the next free one, up to +9, when taken); LAN sessions are looked for on it and the next 3 |
 | `[net] join` | empty | `TM2_NET_JOIN` | `host:port` asked directly for its session (as well as the LAN) |
 | `[net] lan` | 1 | `TM2_NET_LAN` | look for sessions on the LAN (a broadcast while the join screen is open) |
+| `[net] announce` | `roadkill.horrible.dev:27400` | `TM2_NET_ANNOUNCE` | the announce server internet sessions are listed and introduced through (empty: none) |
+| `[net] public` | 1 | `TM2_NET_PUBLIC` | 1: sessions this machine hosts are announced there |
 | `[net] timeout` | 10 | `TM2_NET_TIMEOUT` | seconds without a word from a machine before it leaves the session (the game has no timeout of its own) |
 | `[gameplay] loop_music` | 0 | `TM2_LOOP_MUSIC` | see 3 below |
 | `[gameplay] fix_crashes` | 0 | `TM2_FIX_CRASHES` | see 4 below |
@@ -120,4 +122,5 @@ last, so a packet that arrives after a newer one moves the car back (docs/NETWOR
 This is how DirectPlay delivered them and the default. With `net_drop_stale = 1` the provider
 drops a 0x22 packet whose own counter (packet +8) is not newer than the last one delivered from
 that player (src/host/net/net_session.c). Its events (fire, pickups, kill credit) go with it, as
-with a lost packet. Every machine decides for itself; it is not part of the session's checks.
+with a lost packet. All machines of a session must have the same value: it is part of the
+session's compatibility word (a different one does not list or join).

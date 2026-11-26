@@ -66,6 +66,7 @@ the Windows registry) go to `registry.txt` next to it. Environment variables ove
 | `[audio] sound`, `*_volume` | `TM2_NOSOUND=1`, `TM2_VOLUME=<0..100>` | no sound; volumes |
 | `[input] controller` | `TM2_NOJOY=1` | controllers (default on) |
 | `[net] port`, `join`, `lan` | `TM2_NET_PORT=<port>`, `TM2_NET_JOIN=<host:port>` | network play: UDP port (default 27420), a host to ask directly, LAN search (default on) |
+| `[net] announce`, `public` | `TM2_NET_ANNOUNCE=<host:port>`, `TM2_NET_PUBLIC=0` | internet play: the announce server (default `roadkill.horrible.dev:27400`, empty: none); announce the games you host (default on) |
 | `[gameplay] loop_music`, `fix_crashes`, `net_drop_stale` | `TM2_LOOP_MUSIC=1`, `TM2_FIX_CRASHES=1`, ... | changes to the original, off by default |
 
 `docs/QOL.md` describes every switch.
@@ -96,9 +97,9 @@ file, nothing to install) and `./scripts/package.sh <build dir> <name>` for the 
 From the title screen through the menus into matches, with movies, sound, CD music and
 controllers, played on macOS; the Windows build is checked under Wine and the Linux build so far
 only starts in CI (reports welcome). Network play (Multi Player) works between Roadkill
-instances on a LAN or by address (`[net] join`), with the game's own network code over
-Roadkill's own UDP protocol (not DirectPlay's, so no play with the original game); an internet
-session list is planned (`docs/NETWORK.md`). `docs/RUNTIME.md` lists the details.
+instances on a LAN, by address (`[net] join`) or over the internet through Roadkill's announce
+server (`server/announce`), with the game's own network code over Roadkill's own UDP protocol
+(not DirectPlay's, so no play with the original game; `docs/NETWORK.md`). `docs/RUNTIME.md` lists the details.
 
 ## How it works
 
