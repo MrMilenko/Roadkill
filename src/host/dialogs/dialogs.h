@@ -149,6 +149,7 @@ typedef struct DlgWin {
     int tmin, tmax, tpos, tline, tpage, tfreq, tsel0, tsel1;
     int caret, limit, anchor;
     uint32_t bk, fg;                /* list view colors (CLR_NONE 0xffffffff: default) */
+    int bk_set, fg_set;             /* set by LVM_SETBKCOLOR / LVM_SETTEXTCOLOR (black is 0) */
     DlgPic pic;
     uint32_t sig;
     int dirty;

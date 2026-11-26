@@ -1011,7 +1011,7 @@ static int listview_proc(DlgWin* w, uint32_t msg, uint32_t wp, uint32_t lp, uint
     int rows = list_rows(w, i.h - 4);
     switch (msg) {
     case 0x1000: *res = w->bk; return 1;
-    case 0x1001: w->bk = lp; w->dirty = 1; *res = 1; return 1;           /* LVM_SETBKCOLOR */
+    case 0x1001: w->bk = lp; w->bk_set = 1; w->dirty = 1; *res = 1; return 1;   /* LVM_SETBKCOLOR */
     case 0x1002: case 0x1003: *res = 0; return 1;                        /* image lists */
     case 0x1004: *res = (uint32_t)w->nitems; return 1;                   /* LVM_GETITEMCOUNT */
     case 0x1005: {                                                       /* LVM_GETITEMA */
@@ -1058,7 +1058,7 @@ static int listview_proc(DlgWin* w, uint32_t msg, uint32_t wp, uint32_t lp, uint
         return 1;
     }
     case 0x101e: if (wp < 5) cols_w[wp] = (int)LO(lp); *res = 1; return 1;   /* LVM_SETCOLUMNWIDTH */
-    case 0x1024: w->fg = lp; w->dirty = 1; *res = 1; return 1;
+    case 0x1024: w->fg_set = 1; w->fg = lp; w->dirty = 1; *res = 1; return 1;
     case 0x1026: *res = 1; return 1;
     case 0x102b: {                                                       /* LVM_SETITEMSTATE */
         uint32_t sm = rt_r32(lp + 16), sv = rt_r32(lp + 12);
@@ -1112,11 +1112,12 @@ static int listview_proc(DlgWin* w, uint32_t msg, uint32_t wp, uint32_t lp, uint
 
 static void listview_paint(DlgWin* w, uint32_t hdc, int cw, int ch)
 {
-    uint32_t bg = w->bk != 0xffffffffu && w->bk ? w->bk & 0xffffff : 0xffffff;
+    /* a color the game set, black included (the lobby's player list: white on black) */
+    uint32_t bg = w->bk_set && w->bk != 0xffffffffu ? w->bk & 0xffffff : 0xffffff;
     gdi_fill(hdc, 0, 0, cw, ch, bg);
     gdi_edge(hdc, 0, 0, cw, ch, 1);
     int lh = line_h(w);
-    uint32_t fg = w->fg && w->fg != 0xffffffffu ? w->fg & 0xffffff : 0;
+    uint32_t fg = w->fg_set && w->fg != 0xffffffffu ? w->fg & 0xffffff : 0;
     gdi_dc_select_font(hdc, w->font ? w->font : gdi_default_font());
     for (int k = w->top, y = 2; k < w->nitems && y + lh <= ch - 2; k++, y += lh) {
         int on = k == w->sel;
