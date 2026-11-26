@@ -61,7 +61,7 @@ through `src/host/settings/settings.h` (`settings_int` / `settings_str` / `setti
 | 4. Fixes for the original's crash bugs (`[gameplay] fix_crashes`, default off) | done for the ones that can happen, see the list |
 | 5. Late car state packets dropped in network play (`[gameplay] net_drop_stale`, default off) | done |
 | 6. Sweet Tooth and Minion without the cheat codes (`[gameplay] unlock_hidden_cars`, default off) | done |
-| 7. Dark Tooth as the player's car (`[gameplay] play_dark_tooth`, default off) | one player tournament / challenge; not network play |
+| 7. Dark Tooth as the player's car (`[gameplay] play_dark_tooth`, default off) | done: his own slot on the car select, one player and network games |
 | Widescreen, higher internal resolution | the renderer's work; keys defined here |
 | The setup dialogs drawn in game | the dialogs' work |
 
@@ -148,33 +148,54 @@ Shadow without.
 ### 7. Dark Tooth as the player's car
 
 Dark Tooth is car 14 (type 0xF0): CARSDB\BB.DPC / .TPC, his own stats in the stats setup
-0x0043846c, his name in the car name list, specials and the driving code all take car type
-0xF0. In the original he is only the boss. What the original's data does not have is a place on
-the car select: the CARSEL scene's car wheel is a 14 way switch node (14 car models, 14 driver
-pictures), there is no BIOS\BBINFO.TIM for the car info page, and the ending table (TM2.EXE
-0x004e81d0) stops at car 13. He is also four times a car's size (collision box 485 x 173, 116
-high; cars 89..165 x 50..116, Minion 252): as the player the chase camera sits inside him and
-his probe step height (0xA0) lets him climb the arena walls.
+0x0043846c, his name in the car name list, model 0xF0 in the session setup 0x00475af8; the
+specials and the driving code take car type 0xF0. In the original he is only the boss. What the
+data lacks is his place on the car select (the CARSEL scene's three 14 way switch nodes: 9005
+the car models, 9006 / 9007 the two halves of the driver picture), a car info page (no
+BIOS\BBINFO.TIM; the 14 entry TIM table 0x004e8024), an ending (the table 0x004e81d0 ends at
+car 13), and a size that fits: he is four times a car (collision box 485 x 173, 116 high; cars
+89..165 x 50..116, Minion 252), so as the player the chase camera sits inside him and his probe
+step height (0xA0) lets him climb the arena walls.
 
-With `play_dark_tooth = 1`, in one player tournament and challenge (game types 1 and 3)
-(src/rt/qol_cars.c, hooked from the bindings in src/rt/bind_shell.c, bind_formats.c,
-bind_car.c, bind_game.c; the verified ports are not changed):
+With `play_dark_tooth = 1` (src/rt/qol_cars.c, called from the bindings in
+src/rt/bind_shell.c, bind_formats.c, bind_car.c, bind_game.c, bind_match_mt2_save.c; the
+verified ports are not changed):
 
-- the Sweet Tooth slot of the car select is always selectable, is labelled "Dark Tooth"
-  (menuCarNameText 0x00477b2c) and its pick becomes car 14. It keeps Sweet Tooth's truck,
-  driver picture and car info page, the only ones the scene has. Sweet Tooth himself cannot be
-  picked while the switch is on;
-- the human's Dark Tooth is a quarter of the boss's size: his model is drawn through a DPC scale
+- the car select's wheel has a 15th slot after Minion: when the CARSEL scene's files are loaded
+  (level_files_load 0x004740a8), its three switch nodes are copied into 15 way ones and the scene
+  objects pointed at the copies. Slot 14 of the models is his own BB.DPC (its BB.TPC pages
+  appended to the scene's texture pages, the model relocated against them and run through
+  dbscanHierarchy 0x004a15d4 with an empty object callback), drawn at a quarter; slot 14 of the
+  driver picture is Sweet Tooth's. The name under it is the game's own "Dark Tooth"; the wheel's
+  filter 0x0047770c lets car 14 through. Sweet Tooth and Minion keep their slots (locked as in the
+  original until their codes, or `unlock_hidden_cars`);
+- his car info page is Sweet Tooth's (bg_tim_load 0x0046f784 is handed Sweet Tooth's name for
+  the word after the table); the car the screen comes back to after the page (0x004e8021, kept
+  as (car + 13) % 14 for a 14 way wheel) is stored for 15 ways;
+- a human's Dark Tooth is a quarter of the boss's size: his model is drawn through a DPC scale
   node (type 12, shift + 2) put between each root group of his BB.DPC and its children when the
-  level loads (dpc_load_relocate 0x004502b0), the size values of his stats (+0x3E, +0x42,
-  +0x44, +0x46, +0x48, +0x4A, +0x4E, +0x50 and the launch offsets +0xD4..+0xDC) are quartered
-  after the stats setup, and his probe step height (car +0x594) is kept at 0x28. A quarter
-  because a scale node only halves: half would still be twice a car. Then the chase camera frames
-  him as it does any car. Seen in Los Angeles: he drives, takes hits, fires and stays inside the
-  arena; his weapons and special are what the game gives car 0xF0 (only the machine gun was
-  tried);
-- if he wins the tournament, the ending plays Sweet Tooth's movie (the table has none for car 14).
+  level loads (dpc_load_relocate 0x004502b0, the first BB.DPC of each level_load_assets
+  0x004753a4: the humans' cars are loaded before the opponents'), the size values of his stats
+  (+0x3E, +0x42, +0x44, +0x46, +0x48, +0x4A, +0x4E, +0x50 and the launch offsets +0xD4..+0xDC)
+  are quartered after the stats setup, and his probe step height (car +0x594) is kept at 0x28. A
+  quarter because a scale node only halves: half would still be twice a car. The chase camera
+  then frames him as it does any car;
+- per car things he has none of are Sweet Tooth's: the car info page, the ending if he wins the
+  tournament (screenEnding 0x00485290), and a save made as him (Slot<n> +0x80 = 14) loads as
+  Sweet Tooth while the switch is off. Saves and the tournament's progress otherwise keep car 14
+  (they store the car number only);
+- the Dark Tooth stage (tournament level 8) has no boss fight for a human Dark Tooth, as the
+  original skips the New York Minion fight for a human Minion: cars find their object slot by
+  car type (carBindHumanSlot 0x0045803c, car_bind_ai_by_type 0x00458340), so a boss of the
+  human's own type shares the human's object; tried, that fight ends at once. The boss fight is
+  marked done (0x00624ec9) when the level loads, and the stage goes on to its last messages and
+  the ending;
+- network games: the car select reserves car numbers with the host (net_join 0x004637c4; the
+  per car tables 0x0050f580 / 0x0050f5bc have room for car 14) and needs nothing more. Every
+  machine shrinks a human Dark Tooth the same way, and the switch is bit 2 of the session's
+  compatibility word (docs/NETWORK.md), so machines with and without it do not see each other.
 
-Not covered: network games (the car select there reserves the car number with the other
-machines before it is stored; the slot stays Sweet Tooth), two player games (game type 2). In
-the Dark Tooth stage the boss is a second car 14 at his full size; not played through.
+Seen: the wheel with his slot and model, Sweet Tooth still on the wheel; a tournament as him
+from Los Angeles to Moscow; a save at the Dark Tooth stage through the stage's end, the ending and
+the credits; a network game, host as Dark Tooth, the joiner seeing and targeting him. Not tried:
+his special weapon, two player split screen.

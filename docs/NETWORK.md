@@ -458,7 +458,7 @@ in flight arrive (up to 300 ms), then sends BYE three times. SetPlayerData alway
 reliable.
 
 `compat` is the gameplay settings every machine of a session must share, a bit each (bit 0
-`[gameplay] fix_crashes`, bit 1 `[gameplay] net_drop_stale`): sessions that differ are not
+`[gameplay] fix_crashes`, bit 1 `[gameplay] net_drop_stale`, bit 2 `[gameplay] play_dark_tooth`): sessions that differ are not
 listed, and a join is refused. The announce server lists by `build` = `0x524b0000 | protocol
 version << 8 | compat` (`ns_build`), so other protocol versions and settings never see each
 other there either.

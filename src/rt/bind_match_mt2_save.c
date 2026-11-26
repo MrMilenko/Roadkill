@@ -13,6 +13,7 @@
  */
 #include "rt_env.h"
 #include "match/mt2_save.h"
+#include "qol_cars.h"
 
 static uint32_t key_addr;   /* the registry key object of the innermost adapter */
 
@@ -257,7 +258,8 @@ static uint32_t b_write(const uint32_t* a, int n)
     key_pop(k);
     return 0;
 }
-static uint32_t b_load(const uint32_t* a, int n) { (void)a; (void)n; uint32_t k = key_push(); mt2_save_record_load(env()); key_pop(k); return 0; }
+/* + [gameplay] play_dark_tooth's fallback for a Dark Tooth save (qol_cars.h) */
+static uint32_t b_load(const uint32_t* a, int n) { (void)a; (void)n; uint32_t k = key_push(); mt2_save_record_load(env()); key_pop(k); qolc_save_loaded(); return 0; }
 static uint32_t b_widgets_save(const uint32_t* a, int n) { (void)a; (void)n; mt2_save_widgets(env(), 0); return 0; }
 static uint32_t b_widgets_load(const uint32_t* a, int n) { (void)a; (void)n; mt2_save_widgets(env(), 1); return 0; }
 static uint32_t b_destroy_save(const uint32_t* a, int n) { (void)a; (void)n; mt2_save_destroy(env(), 0); return 0; }

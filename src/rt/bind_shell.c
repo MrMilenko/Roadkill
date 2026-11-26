@@ -168,8 +168,8 @@ static uint32_t b_level_display_name(const uint32_t* a, int n) { return sh_level
 static uint32_t b_level_short_name(const uint32_t* a, int n) { return sh_level_short_name((uint8_t)A(1)); }
 static uint32_t b_car_display_name(const uint32_t* a, int n) { return sh_car_display_name((uint8_t)A(1)); }
 static uint32_t b_tournament_opponents(const uint32_t* a, int n) { return sh_tournament_opponents((uint8_t)A(1)); }
-static uint32_t b_car_unlocked(const uint32_t* a, int n) { ShEnv e = sh(); return (uint32_t)qolc_car_unlocked((int32_t)A(0), sh_car_unlocked(&e, (int32_t)A(0))); }
-static uint32_t b_menu_car_name_text(const uint32_t* a, int n) { ShEnv e = sh(); return qolc_car_name_text((int32_t)A(0), sh_menu_car_name_text(&e, (int32_t)A(0))); }
+static uint32_t b_car_unlocked(const uint32_t* a, int n) { ShEnv e = sh(); return (uint32_t)sh_car_unlocked(&e, (int32_t)A(0)); }
+static uint32_t b_menu_car_name_text(const uint32_t* a, int n) { ShEnv e = sh(); return sh_menu_car_name_text(&e, (int32_t)A(0)); }
 static uint32_t b_menu_random_car_text(const uint32_t* a, int n) { (void)a; (void)n; return sh_menu_random_car_text(); }
 static uint32_t b_menu_level_name_text(const uint32_t* a, int n) { return sh_menu_level_name_text((uint8_t)A(0)); }
 
@@ -309,6 +309,7 @@ static uint32_t b_level_files_load(const uint32_t* a, int n)
     Sh2Env e = sh2_framed();
     sh2_level_files_load(&e, A(0));
     sh_framed_done();
+    qolc_scene_loaded(A(0));   /* [gameplay] play_dark_tooth (qol_cars.h) */
     return 0;
 }
 static uint32_t b_challenge_result(const uint32_t* a, int n)
@@ -390,7 +391,6 @@ static uint32_t b_screen_car_select(const uint32_t* a, int n)
     uint32_t r;
     qolc_car_select_enter();
     FRAMED(0xa70u, sh3_car_select(&e, fb));
-    qolc_car_select_leave();
     return r;
 }
 static uint32_t b_screen_level_select(const uint32_t* a, int n) { uint32_t r; FRAMED(0x748u, sh3_level_select(&e, fb, A(0))); return r; }
@@ -407,7 +407,14 @@ static uint32_t b_target_actors_update(const uint32_t* a, int n) { (void)a; (voi
  * its +0) */
 static uint32_t b_game_flow_init(const uint32_t* a, int n) { (void)a; (void)n; uint32_t r; FRAMED(0x3b4u, sh5_game_main(&e, fb, rt_r32(0x00bdfcd0u))); return r; }
 /* 0x004753a4(game state) */
-static uint32_t b_level_load_assets(const uint32_t* a, int n) { uint32_t r; FRAMED(0x154u, (sh5_level_load(&e, fb, A(0)), 0)); return r; }
+static uint32_t b_level_load_assets(const uint32_t* a, int n)
+{
+    uint32_t r;
+    qolc_level_load(1);   /* [gameplay] play_dark_tooth (qol_cars.h) */
+    FRAMED(0x154u, (sh5_level_load(&e, fb, A(0)), 0));
+    qolc_level_load(0);
+    return r;
+}
 /* 0x00470d3c(type, instance, damage): the original's al */
 static uint32_t b_target_damage(const uint32_t* a, int n) { uint32_t r; FRAMED(0x0cu, sh5_target_damage(&e, fb, (int32_t)A(0), (int32_t)A(1), A(2))); return r; }
 

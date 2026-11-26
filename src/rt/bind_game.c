@@ -406,7 +406,7 @@ static uint32_t b_scene_dispatch_events(const uint32_t* a, int n)
 static uint32_t b_bg_tim_load(const uint32_t* a, int n)
 {
     uint32_t loc = rt_frame_push(0x18);
-    call3(0x00498d18u, BG_BUF, A(0), loc + 0xcu);
+    call3(0x00498d18u, BG_BUF, qolc_info_tim(A(0)), loc + 0xcu);   /* + play_dark_tooth (qol_cars.h) */
     rt_frame_pop(0x18);
     int to_565 = (uint8_t)call0(0x00496284u) != 0;
     return (uint32_t)bg_tim_load(rt_ptr(BG_BUF), BG_SIZE, to_565);

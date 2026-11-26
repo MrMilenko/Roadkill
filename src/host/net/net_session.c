@@ -23,6 +23,7 @@
 #include "host/net/net_announce.h"
 #include "host/net/net_anwire.h"
 #include "host/net/net_discovery.h"
+#include "host/qol/qol.h"
 #include "host/net/net_link.h"
 #include "host/net/net_log.h"
 #include "host/net/net_sock.h"
@@ -866,7 +867,8 @@ uint32_t ns_compat(void)
     /* gameplay settings every machine of a session shares: a bit each */
     static uint32_t c = 0xffffffffu;
     if (c == 0xffffffffu)
-        c = (settings_bool("gameplay.fix_crashes", 0) ? 1u : 0u) | (settings_bool("gameplay.net_drop_stale", 0) ? 2u : 0u);
+        c = (settings_bool("gameplay.fix_crashes", 0) ? 1u : 0u) | (settings_bool("gameplay.net_drop_stale", 0) ? 2u : 0u)
+            | (qol_play_dark_tooth() ? 4u : 0u);   /* car 14 on the wheel, car sized */
     return c;
 }
 
