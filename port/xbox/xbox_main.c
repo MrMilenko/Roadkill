@@ -229,6 +229,8 @@ void __cdecl main(void)
     }
     /* the console's screen is the game's 640 x 480: no window scale (roadkill.ini can't change it) */
     rk_setenv("TM2_SCALE", "1", 1);
+    /* test builds: the network provider's log on (the per-peer stats every few seconds) */
+    rk_setenv("TM2_NET_LOG", "1", 0);
     __try {
         roadkill_main(1, argv);
     } __except (rk_crash_report(GetExceptionInformation())) {

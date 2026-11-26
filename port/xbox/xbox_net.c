@@ -14,7 +14,20 @@
 
 #include "host/net/net_sock.h"
 
-struct NetSock { SOCKET fd; };
+/* XNet's sockets don't take a sendto from one thread while another waits in select on the same
+ * socket: the send is lost (the provider's socket thread waits in net_sock_recv while the game's
+ * thread sends its car state). So a socket's sends go through a queue that its receiving thread
+ * sends from, between short waits. */
+#define SENDQ 64
+typedef struct { NetAddr to; int len; char data[1500]; } Outgoing;
+struct NetSock {
+    SOCKET fd;
+    CRITICAL_SECTION lock;
+    Outgoing q[SENDQ];
+    int head, count;
+    volatile LONG receiving;   /* a thread is (or has been) receiving: sends queue for it */
+    unsigned sent, failed, dropped;
+};
 
 static volatile LONG started;   /* 0 not yet, 1 up, -1 failed */
 
@@ -119,9 +132,10 @@ NetSock* net_sock_open(uint16_t port, int tries, uint16_t* bound)
             int sl = sizeof sa;
             NetSock* s;
             if (getsockname(fd, (struct sockaddr*)&sa, &sl) == 0 && bound) *bound = ntohs(sa.sin_port);
-            s = (NetSock*)malloc(sizeof *s);
+            s = (NetSock*)calloc(1, sizeof *s);
             if (!s) { closesocket(fd); return NULL; }
             s->fd = fd;
+            InitializeCriticalSection(&s->lock);
             return s;
         }
         closesocket(fd);
@@ -134,15 +148,54 @@ void net_sock_close(NetSock* s)
 {
     if (!s) return;
     closesocket(s->fd);
+    DeleteCriticalSection(&s->lock);
     free(s);
+}
+
+static int send_now(NetSock* s, const NetAddr* to, const void* p, int len)
+{
+    struct sockaddr_in sa;
+    to_sa(to, &sa);
+    if (sendto(s->fd, (const char*)p, len, 0, (struct sockaddr*)&sa, sizeof sa) == len) { s->sent++; return 0; }
+    if (s->failed++ < 10) rk_log("network: sendto %d bytes failed (%d)", len, WSAGetLastError());
+    return -1;
+}
+
+/* sends what other threads queued (the receiving thread, outside select) */
+static void flush(NetSock* s)
+{
+    for (;;) {
+        Outgoing o;
+        EnterCriticalSection(&s->lock);
+        if (!s->count) { LeaveCriticalSection(&s->lock); return; }
+        o.to = s->q[s->head].to;
+        o.len = s->q[s->head].len;
+        memcpy(o.data, s->q[s->head].data, (size_t)o.len);
+        s->head = (s->head + 1) % SENDQ;
+        s->count--;
+        LeaveCriticalSection(&s->lock);
+        send_now(s, &o.to, o.data, o.len);
+    }
 }
 
 int net_sock_send(NetSock* s, const NetAddr* to, const void* p, int len)
 {
-    struct sockaddr_in sa;
-    if (!s || len <= 0) return -1;
-    to_sa(to, &sa);
-    return sendto(s->fd, (const char*)p, len, 0, (struct sockaddr*)&sa, sizeof sa) == len ? 0 : -1;
+    Outgoing* o;
+    if (!s || len <= 0 || len > (int)sizeof o->data) return -1;
+    if (!s->receiving) return send_now(s, to, p, len);   /* nobody waits on the socket yet */
+    EnterCriticalSection(&s->lock);
+    if (s->count == SENDQ) {
+        LeaveCriticalSection(&s->lock);
+        if (s->dropped++ < 10) rk_log("network: send queue full, a datagram dropped");
+        return -1;
+    }
+    o = &s->q[(s->head + s->count) % SENDQ];
+    o->to = *to;
+    o->len = len;
+    memcpy(o->data, p, (size_t)len);
+    s->count++;
+    LeaveCriticalSection(&s->lock);
+    return 0;
 }
 
 int net_sock_recv(NetSock* s, NetAddr* from, void* p, int cap, int timeout_ms)
@@ -153,12 +206,20 @@ int net_sock_recv(NetSock* s, NetAddr* from, void* p, int cap, int timeout_ms)
     struct sockaddr_in sa;
     int sl = sizeof sa, want, n, r;
     if (!s) return -1;
-    FD_ZERO(&rd);
-    FD_SET(s->fd, &rd);
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-    r = select(0, &rd, NULL, NULL, &tv);
-    if (r == 0) return 0;
+    s->receiving = 1;
+    /* wait in short steps, sending what's queued between them: a game send waits 2 ms at most */
+    for (;;) {
+        int step = timeout_ms < 2 ? timeout_ms : 2;
+        flush(s);
+        FD_ZERO(&rd);
+        FD_SET(s->fd, &rd);
+        tv.tv_sec = 0;
+        tv.tv_usec = step * 1000;
+        r = select(0, &rd, NULL, NULL, &tv);
+        if (r != 0) break;
+        timeout_ms -= step;
+        if (timeout_ms <= 0) { flush(s); return 0; }
+    }
     if (r < 0) return -1;
     /* one byte more than the caller takes: a longer datagram shows up as cap + 1 */
     want = cap + 1 <= (int)sizeof buf ? cap + 1 : (int)sizeof buf;
