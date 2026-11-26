@@ -85,6 +85,7 @@ int rt_init(const char* exe_path)
     uint32_t nsec = rd16(d + pe + 6), opt = rd16(d + pe + 20), base = rd32(d + pe + 52);
     if (base != 0x00400000u) { fprintf(stderr, "tm2: %s is not the TM2.EXE this port reads\n", exe_path); free(d); return -1; }
     os_commit(rt_base + base, 0x1000);
+    uint32_t committed_to = base + 0x1000;
     memcpy(rt_base + base, d, 0x1000);   /* the headers, as the loader maps them */
     for (uint32_t i = 0; i < nsec; i++) {
         const uint8_t* s = d + pe + 24 + opt + 40 * i;
@@ -92,7 +93,13 @@ int rt_init(const char* exe_path)
         uint32_t vs = rd32(s + 8), va = rd32(s + 12), rs = rd32(s + 16), rp = rd32(s + 20);
         uint32_t n = vs > rs ? vs : rs;
         if (base + va + n > RT_HEAP_BASE) { free(d); return -1; }
-        if (os_commit(rt_base + base + va, n) != 0) { free(d); return -1; }
+        /* the image is committed whole, from the headers to the last section's end: the gaps
+         * between sections too (code reads the image as one block, e.g. ai_cars_respawn's start
+         * set table) */
+        if (base + va + n > committed_to) {
+            if (os_commit(rt_base + committed_to, base + va + n - committed_to) != 0) { free(d); return -1; }
+            committed_to = base + va + n;
+        }
         if (rp == 0) continue;   /* .bss: no file data, the mapping is already zero */
         if (rp + rs > (uint32_t)size) { free(d); return -1; }
         memcpy(rt_base + base + va, d + rp, rs);
