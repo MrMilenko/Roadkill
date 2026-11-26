@@ -220,12 +220,24 @@ static uint32_t r_RegSetValueExA(const uint32_t* a, int n)
         v->data = NULL;
     }
     uint32_t size = W(5);
-    if ((W(3) == 1 || W(3) == 2) && size == 0) size = (uint32_t)strlen(w32_str(W(4))) + 1;   /* REG_SZ */
+    /* REG_SZ / REG_EXPAND_SZ are kept with their terminating NUL whatever cbData says: the game
+     * passes lstrlenA (en2_reg_write_string 0x004ac638, no NUL) and reads the value back into an
+     * unterminated buffer (the network screen's NetProviderName, NetPlayerName, NetSessionName),
+     * so it relied on reading the NUL back; without it nothing it saved was found again. */
+    int sz = W(3) == 1 || W(3) == 2;
+    if (sz) {
+        const char* str = w32_str(W(4));
+        uint32_t len = 0;
+        while (len < size && str[len]) len++;
+        if (size == 0) len = (uint32_t)strlen(str);
+        size = len + 1;
+    }
     v->type = W(3);
     v->size = size;
     free(v->data);
     v->data = malloc(size + 1);
     memcpy(v->data, rt_ptr(W(4)), size);
+    if (sz) v->data[size - 1] = 0;
     save();
     return 0;
 }
