@@ -189,6 +189,18 @@ LONG rk_crash_report(EXCEPTION_POINTERS* e)
             rk_log("CRASH: stack %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx", sp[i], sp[i + 1], sp[i + 2],
                    sp[i + 3], sp[i + 4], sp[i + 5], sp[i + 6], sp[i + 7]);
     }
+    {
+        /* the chain of calls: each frame's saved EBP and return address (frame pointers kept:
+         * the Makefile's -fno-omit-frame-pointer), while they point into this thread's stack */
+        const ULONG* fp = (const ULONG*)c->Ebp;
+        ULONG lo = c->Esp, hi = lo + 0x100000;
+        int depth;
+        for (depth = 0; depth < 32 && (ULONG)fp >= lo && (ULONG)fp < hi && !((ULONG)fp & 3); depth++) {
+            rk_log("CRASH: frame %2d return %08lx", depth, fp[1]);
+            if (fp[0] <= (ULONG)fp) break;
+            fp = (const ULONG*)fp[0];
+        }
+    }
     return EXCEPTION_EXECUTE_HANDLER;
 }
 

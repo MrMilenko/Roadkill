@@ -29,7 +29,7 @@ SRCS += $(SDL2X_SRC_LIST)
 
 # Roadkill's code: cdecl as on the desktop (OXDK's default is stdcall, for the XDK's samples),
 # C99, the Xbox pieces first on the include path.
-RK_FLAGS = -std=gnu99 -Xclang -fdefault-calling-conv=cdecl -ffp-contract=off \
+RK_FLAGS = -std=gnu99 -Xclang -fdefault-calling-conv=cdecl -ffp-contract=off -fno-omit-frame-pointer \
            -DROADKILL_XBOX=1 -DROADKILL_NO_TLS=1 \
            -I$(CURDIR)/compat -I$(ROADKILL)/src -I$(ROADKILL)/src/rt -I$(ROADKILL)/third_party/indeo -I$(ROADKILL)/third_party/dr_libs \
            -include $(CURDIR)/compat/rk_xbox.h \
