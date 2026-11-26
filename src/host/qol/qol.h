@@ -4,6 +4,7 @@
  * Each answer is read once and kept for the run. One file per switch:
  *   crash_fixes.c  [gameplay] fix_crashes      music_loop.c  [gameplay] loop_music
  *   controller.c   [input] controller          volume.c      [audio] *_volume
+ *   hidden_cars.c  [gameplay] unlock_hidden_cars, play_dark_tooth
  */
 #ifndef TM2_HOST_QOL_QOL_H
 #define TM2_HOST_QOL_QOL_H
@@ -16,6 +17,13 @@ void qol_fixed(const char* id);
 
 /* [gameplay] loop_music (default 0): a CD track that ends starts again at once */
 int qol_loop_music(void);
+
+/* [gameplay] unlock_hidden_cars (default 0): Sweet Tooth and Minion on the car select as if
+ * their cheat codes had been typed (src/rt/qol_cars.c) */
+int qol_unlock_hidden_cars(void);
+/* [gameplay] play_dark_tooth (default 0): in one player tournament / challenge, the Sweet Tooth
+ * slot of the car select picks Dark Tooth, drawn and sized as a car (src/rt/qol_cars.c) */
+int qol_play_dark_tooth(void);
 
 /* [input] controller (default 1) and a game controller connected: the game's saved
  * InputJoystickStatus reads as on (host/win32_reg.c) */

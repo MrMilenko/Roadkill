@@ -19,6 +19,7 @@
 #include "game/car_spawn.h"
 #include "game/car_stats.h"
 #include "math/tm2math.h"
+#include "qol_cars.h"
 
 #define A(i) rt_arg(a, n, (i))
 
@@ -113,6 +114,7 @@ static uint32_t b_car_stats_init(const uint32_t* a, int n)
     }
     int multi = (int)rt_call(0x004632b0u, NULL, 0);
     car_stats_init(rt_ptr(A(1)), (int16_t)A(0), (uint16_t)A(2), multi, cb_rotate, NULL);
+    qolc_stats_done(A(1), (uint16_t)A(2));   /* [gameplay] play_dark_tooth (qol_cars.h) */
     return 0;
 }
 

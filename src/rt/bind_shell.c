@@ -43,6 +43,7 @@
 #include "shell/sh5_game_main.h"
 #include "shell/sh5_level_load.h"
 #include "shell/sh5_target_damage.h"
+#include "qol_cars.h"
 
 #define A(i) rt_arg(a, n, (i))
 
@@ -167,8 +168,8 @@ static uint32_t b_level_display_name(const uint32_t* a, int n) { return sh_level
 static uint32_t b_level_short_name(const uint32_t* a, int n) { return sh_level_short_name((uint8_t)A(1)); }
 static uint32_t b_car_display_name(const uint32_t* a, int n) { return sh_car_display_name((uint8_t)A(1)); }
 static uint32_t b_tournament_opponents(const uint32_t* a, int n) { return sh_tournament_opponents((uint8_t)A(1)); }
-static uint32_t b_car_unlocked(const uint32_t* a, int n) { ShEnv e = sh(); return (uint32_t)sh_car_unlocked(&e, (int32_t)A(0)); }
-static uint32_t b_menu_car_name_text(const uint32_t* a, int n) { ShEnv e = sh(); return sh_menu_car_name_text(&e, (int32_t)A(0)); }
+static uint32_t b_car_unlocked(const uint32_t* a, int n) { ShEnv e = sh(); return (uint32_t)qolc_car_unlocked((int32_t)A(0), sh_car_unlocked(&e, (int32_t)A(0))); }
+static uint32_t b_menu_car_name_text(const uint32_t* a, int n) { ShEnv e = sh(); return qolc_car_name_text((int32_t)A(0), sh_menu_car_name_text(&e, (int32_t)A(0))); }
 static uint32_t b_menu_random_car_text(const uint32_t* a, int n) { (void)a; (void)n; return sh_menu_random_car_text(); }
 static uint32_t b_menu_level_name_text(const uint32_t* a, int n) { return sh_menu_level_name_text((uint8_t)A(0)); }
 
@@ -263,7 +264,17 @@ SCREEN0(b_screen_network_b, sh_screen_network_b)
 SCREEN0(b_screen_audio_cfg, sh_screen_audio_cfg)
 SCREEN0(b_screen_history_movie, sh_screen_history_movie)
 SCREEN0(b_screen_match_end, sh_screen_match_end)
-SCREEN0(b_screen_ending, sh_screen_ending)
+/* play_dark_tooth: the ending table has no car 14 (qol_cars.h) */
+static uint32_t b_screen_ending(const uint32_t* a, int n)
+{
+    (void)a; (void)n;
+    qolc_ending(1);
+    ShEnv e = sh_framed();
+    uint32_t r = sh_screen_ending(&e);
+    sh_framed_done();
+    qolc_ending(0);
+    return r;
+}
 static uint32_t b_screen_input_cfg(const uint32_t* a, int n)
 {
     ShEnv e = sh_framed();
@@ -372,7 +383,16 @@ static uint32_t b_target_actor_place(const uint32_t* a, int n) { Sh2Env e = sh2(
 /* 0x0047e624: esi_in is the caller's esi, returned when no opponent is left to pick; the only
  * caller, the shell loop 0x00485338, holds the title screen 0x004780fc there all along */
 static uint32_t b_screen_ai_select(const uint32_t* a, int n) { (void)a; (void)n; uint32_t r; FRAMED(0x960u, sh3_ai_select(&e, fb, SH_SCREEN_TITLE)); return r; }
-static uint32_t b_screen_car_select(const uint32_t* a, int n) { (void)a; (void)n; uint32_t r; FRAMED(0xa70u, sh3_car_select(&e, fb)); return r; }
+/* car select: [gameplay] unlock_hidden_cars / play_dark_tooth around the verified screen (qol_cars.h) */
+static uint32_t b_screen_car_select(const uint32_t* a, int n)
+{
+    (void)a; (void)n;
+    uint32_t r;
+    qolc_car_select_enter();
+    FRAMED(0xa70u, sh3_car_select(&e, fb));
+    qolc_car_select_leave();
+    return r;
+}
 static uint32_t b_screen_level_select(const uint32_t* a, int n) { uint32_t r; FRAMED(0x748u, sh3_level_select(&e, fb, A(0))); return r; }
 static uint32_t b_net_car_wait(const uint32_t* a, int n) { (void)a; (void)n; uint32_t r; FRAMED(0x328u, sh3_net_wait(&e, fb)); return r; }
 static uint32_t b_screen_single_menu(const uint32_t* a, int n) { (void)a; (void)n; uint32_t r; FRAMED(0x644u, sh3_single_menu(&e, fb)); return r; }

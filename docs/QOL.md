@@ -47,6 +47,8 @@ through `src/host/settings/settings.h` (`settings_int` / `settings_str` / `setti
 | `[gameplay] loop_music` | 0 | `TM2_LOOP_MUSIC` | see 3 below |
 | `[gameplay] fix_crashes` | 0 | `TM2_FIX_CRASHES` | see 4 below |
 | `[gameplay] net_drop_stale` | 0 | `TM2_NET_DROP_STALE` | see 5 below |
+| `[gameplay] unlock_hidden_cars` | 0 | `TM2_UNLOCK_HIDDEN_CARS` | see 6 below |
+| `[gameplay] play_dark_tooth` | 0 | `TM2_PLAY_DARK_TOOTH` | see 7 below |
 | `[debug] ...` | | `TM2_KEYS`, `TM2_SHOT_EVERY`, `TM2_KEEP_ACTIVE`, `TM2_CD_LOG`, ... | written commented out; `src/host/settings/settings.c` lists them all |
 
 ## Status
@@ -58,6 +60,8 @@ through `src/host/settings/settings.h` (`settings_int` / `settings_str` / `setti
 | 3. Looping CD music (`[gameplay] loop_music`, default off) | done |
 | 4. Fixes for the original's crash bugs (`[gameplay] fix_crashes`, default off) | done for the ones that can happen, see the list |
 | 5. Late car state packets dropped in network play (`[gameplay] net_drop_stale`, default off) | done |
+| 6. Sweet Tooth and Minion without the cheat codes (`[gameplay] unlock_hidden_cars`, default off) | done |
+| 7. Dark Tooth as the player's car (`[gameplay] play_dark_tooth`, default off) | one player tournament / challenge; not network play |
 | Widescreen, higher internal resolution | the renderer's work; keys defined here |
 | The setup dialogs drawn in game | the dialogs' work |
 
@@ -124,3 +128,53 @@ drops a 0x22 packet whose own counter (packet +8) is not newer than the last one
 that player (src/host/net/net_session.c). Its events (fire, pickups, kill credit) go with it, as
 with a lost packet. All machines of a session must have the same value: it is part of the
 session's compatibility word (a different one does not list or join).
+
+### 6. Sweet Tooth and Minion without the cheat codes
+
+What the original does: Sweet Tooth (car 12) and Minion (car 13) are on the car select only
+after their codes are typed there: GLORIOUS (cheats on, code 0), then ICECREAM (code 18,
+Sweet Tooth) or BIGBOY (code 19, Minion). The key sequence table is TM2.EXE 0x004e6a84; the
+cheat handler 0x0044e1cc (src/platform/pf8_cheats.c) sets pickup counter 18 / 19
+(0x004fff24 / 0x004fff28); the car select's menu hook 0x00477aa0 takes the counters (its buttons
+0x12, 0x13 come from TM2.EXE 0x004e8064) and posts scene events 0x12 / 0x13, whose actions store
+1 in 0x009f6c1c (Sweet Tooth) / 0x009f6c1d (Minion) (src/shell/sh3_car_select.c, frame +0x974 /
++0x95c). The wheel's filter 0x0047770c skips the cars whose flag is 0. Nothing clears the flags
+again: once typed, the cars stay until the game exits (they are not saved). With
+`unlock_hidden_cars = 1` the car select binding (src/rt/bind_shell.c, src/rt/qol_cars.c) stores
+the same two 1s each time the car select starts, so both cars are on the wheel, also in network
+games. Seen: the wheel goes Hammerhead -> Minion -> Sweet Tooth with the switch, Hammerhead ->
+Shadow without.
+
+### 7. Dark Tooth as the player's car
+
+Dark Tooth is car 14 (type 0xF0): CARSDB\BB.DPC / .TPC, his own stats in the stats setup
+0x0043846c, his name in the car name list, specials and the driving code all take car type
+0xF0. In the original he is only the boss. What the original's data does not have is a place on
+the car select: the CARSEL scene's car wheel is a 14 way switch node (14 car models, 14 driver
+pictures), there is no BIOS\BBINFO.TIM for the car info page, and the ending table (TM2.EXE
+0x004e81d0) stops at car 13. He is also four times a car's size (collision box 485 x 173, 116
+high; cars 89..165 x 50..116, Minion 252): as the player the chase camera sits inside him and
+his probe step height (0xA0) lets him climb the arena walls.
+
+With `play_dark_tooth = 1`, in one player tournament and challenge (game types 1 and 3)
+(src/rt/qol_cars.c, hooked from the bindings in src/rt/bind_shell.c, bind_formats.c,
+bind_car.c, bind_game.c; the verified ports are not changed):
+
+- the Sweet Tooth slot of the car select is always selectable, is labelled "Dark Tooth"
+  (menuCarNameText 0x00477b2c) and its pick becomes car 14. It keeps Sweet Tooth's truck,
+  driver picture and car info page, the only ones the scene has. Sweet Tooth himself cannot be
+  picked while the switch is on;
+- the human's Dark Tooth is a quarter of the boss's size: his model is drawn through a DPC scale
+  node (type 12, shift + 2) put between each root group of his BB.DPC and its children when the
+  level loads (dpc_load_relocate 0x004502b0), the size values of his stats (+0x3E, +0x42,
+  +0x44, +0x46, +0x48, +0x4A, +0x4E, +0x50 and the launch offsets +0xD4..+0xDC) are quartered
+  after the stats setup, and his probe step height (car +0x594) is kept at 0x28. A quarter
+  because a scale node only halves: half would still be twice a car. Then the chase camera frames
+  him as it does any car. Seen in Los Angeles: he drives, takes hits, fires and stays inside the
+  arena; his weapons and special are what the game gives car 0xF0 (only the machine gun was
+  tried);
+- if he wins the tournament, the ending plays Sweet Tooth's movie (the table has none for car 14).
+
+Not covered: network games (the car select there reserves the car number with the other
+machines before it is stored; the slot stays Sweet Tooth), two player games (game type 2). In
+the Dark Tooth stage the boss is a second car 14 at his full size; not played through.

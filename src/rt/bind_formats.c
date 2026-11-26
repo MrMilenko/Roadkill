@@ -12,6 +12,7 @@
 #include "formats/dpc.h"
 #include "formats/tim.h"
 #include "formats/tpc.h"
+#include "qol_cars.h"
 
 #define A(i) rt_arg(a, n, (i))
 
@@ -120,6 +121,7 @@ static uint32_t b_dpc_load_relocate(const uint32_t* a, int n)
         c3(0x0049eee0u, v, base, shift);
         c3(0x004a15d4u, v, cnt_alloc, 0x0044f20cu);
     }
+    qolc_model_loaded(buf);   /* [gameplay] play_dark_tooth (qol_cars.h) */
     return 0;
 }
 

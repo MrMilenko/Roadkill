@@ -74,6 +74,8 @@ static const Key keys[] = {
 
     {"gameplay.loop_music", "TM2_LOOP_MUSIC", ENV_VALUE, "0", "1: a level's CD track starts again at once when it ends (the original's CD monitor restarts it after up to 3 seconds of silence)"},
     {"gameplay.fix_crashes", "TM2_FIX_CRASHES", ENV_VALUE, "0", "1: guard the original's own crash / hang bugs (docs/QOL.md lists them); 0: as the original"},
+    {"gameplay.unlock_hidden_cars", "TM2_UNLOCK_HIDDEN_CARS", ENV_VALUE, "0", "1: Sweet Tooth and Minion can be picked on the car select without their cheat codes (0: as the original, type ICECREAM / BIGBOY there)"},
+    {"gameplay.play_dark_tooth", "TM2_PLAY_DARK_TOOTH", ENV_VALUE, "0", "1: one player tournament / challenge: the Sweet Tooth slot of the car select picks Dark Tooth, shrunk to a car's size (docs/QOL.md); 0: as the original, Dark Tooth is only the boss"},
     {"gameplay.net_drop_stale", "TM2_NET_DROP_STALE", ENV_VALUE, "0", "1: network play drops another car's state packet that arrives after a newer one (0: as DirectPlay, late packets snap the car back)"},
 
     {"debug.keep_active", "TM2_KEEP_ACTIVE", ENV_PRESENT, "0", "1: the game never sees the window deactivate (the original pauses)"},

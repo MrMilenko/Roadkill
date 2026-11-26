@@ -19,6 +19,7 @@
 #include <stdlib.h>
 
 #include "rt_env.h"
+#include "qol_cars.h"
 #include "assets/exe_carstats.h"
 #include "game/camera.h"
 #include "game/car.h"
@@ -285,6 +286,7 @@ static uint32_t b_car_player_update(const uint32_t* a, int n)
     o.multiplayer = (int)call0(0x004632b0u);
     o.land_flag = (int32_t)rt_r32(0x00520e90u);
     o.frame_parity = (int32_t)rt_r32(0x00a0364cu);
+    qolc_player_frame(A(0));   /* [gameplay] play_dark_tooth (qol_cars.h) */
     car_player_update(rt_ptr(A(0)), &o);
     return 0;
 }

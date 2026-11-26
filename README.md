@@ -69,6 +69,7 @@ the Windows registry) go to `registry.txt` next to it. Environment variables ove
 | `[net] port`, `join`, `lan` | `TM2_NET_PORT=<port>`, `TM2_NET_JOIN=<host:port>` | network play: UDP port (default 27420), a host to ask directly, LAN search (default on) |
 | `[net] announce`, `public` | `TM2_NET_ANNOUNCE=<host:port>`, `TM2_NET_PUBLIC=0` | internet play: the announce server (default `roadkill.horrible.dev:27400`, empty: none); announce the games you host (default on) |
 | `[gameplay] loop_music`, `fix_crashes`, `net_drop_stale` | `TM2_LOOP_MUSIC=1`, `TM2_FIX_CRASHES=1`, ... | changes to the original, off by default |
+| `[gameplay] unlock_hidden_cars`, `play_dark_tooth` | `TM2_UNLOCK_HIDDEN_CARS=1`, `TM2_PLAY_DARK_TOOTH=1` | Sweet Tooth and Minion without the cheat codes; Dark Tooth (car-sized) on the Sweet Tooth slot in one player games. Off by default |
 
 `docs/QOL.md` describes every switch.
 
