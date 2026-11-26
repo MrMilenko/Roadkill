@@ -1,9 +1,9 @@
 # Network play: what TM2.EXE asks of DirectPlay, and how the host can provide it
 
 Goal: online multiplayer that runs the 1997 network code as it is, with DirectPlay supplied by the
-host (src/host/dx_dplay.c, today a stub: `DirectPlayEnumerateA` lists no service provider, so Multi
-Player goes back to the title, and `DirectPlayCreate` fails). The plan is a host side "Internet
-TCP/IP" service provider over UDP plus a small announce / rendezvous server.
+host: a host side "Internet TCP/IP" service provider over UDP (src/host/net, section 6: LAN and
+direct IP games work between Roadkill instances) plus, later, a small announce / rendezvous
+server.
 
 Everything below comes from the verified ports in src/ (emulator diffs against TM2.EXE) and the
 notes in the decomp repo's tools/names/verified.tsv. "Unknown" means the ported code does not
@@ -277,7 +277,7 @@ answers with 4 in its next packet), 4 / 5 score counters (0x0050e0b4 / 0x0050e0d
 
 ## 5. Implementation plan for the host provider
 
-### Interfaces (src/host/dx_dplay.c, on dx_com.h)
+### Interfaces (src/host/net/dplay.c, on dx_com.h)
 
 - `DirectPlayEnumerateA`: call the callback once (dx_call_cb) with a GUID in persistent fake
   memory and a name that contains "TCP", e.g. the stock "Internet TCP/IP Connection For
@@ -295,9 +295,9 @@ answers with 4 in its next packet), 4 / 5 score counters (0x0050e0b4 / 0x0050e0d
   (0x44). Everything else a logged DPERR_UNSUPPORTED.
 - The pf8 ports call through `PF2_COM(PF2_IUNK, slot)` with slots 0x10 (v1 Close, boot probe),
   0x30 (v3A EnumPlayers) and 0x74 (v3A SetPlayerData) (pf8_boot.c:179, pf8_dplay.c:56,
-  pf8_netrun.c:31, pf8_netstart.c:101). Only slots 0, 4, 8 are bound today (src/host/dx_com.c:169); these three need
-  bindings that look the object up (dx_obj_get(a[0], NULL)) and dispatch by its interface, since
-  slot 0x30 is EnumGroups on v1 but EnumPlayers on v3A. The engine and match ports read the fake
+  pf8_netrun.c:31, pf8_netstart.c:101). src/host/dx_com.c binds them to a dispatch that looks
+  the object up (dx_obj_get(a[0], NULL)) and calls its own vtable's slot, since slot 0x30 is
+  EnumGroups on v1 but EnumPlayers on v3A. The engine and match ports read the fake
   vtable from game memory and need nothing extra.
 - Callbacks into the game (enumerate, EnumSessions, EnumPlayers) go through dx_call_cb with the
   DPSESSIONDESC2 / DPNAME and their strings in game memory.
@@ -392,3 +392,158 @@ block the queue: keep every delivered message under 0x400 bytes (system messages
 - No game side timeouts: if the provider fails to report a dead peer, barriers hang forever.
 - Interop with a real DirectPlay installation (an original TM2 on Windows) is not possible with
   this wire format and is not a goal.
+
+## 6. Status: what is built (milestone 1)
+
+Multi Player works between Roadkill instances on a LAN or by address: the provider list, the
+setup screen, hosting, the join screen's session list (with the session's players), joining,
+the lobby (both players listed, chat, ready, start), car select (the host grants cars), the
+round start barriers and the match with both cars, a player leaving or timing out (the others
+get DPSYS_DESTROYPLAYERORGROUP; in a match the car leaves) and host migration (the new host gets
+DPSYS_HOST and the host's buttons). Tested with two instances on one Mac (below); the game's
+network code is unchanged.
+
+### Code (src/host/net)
+
+| File | What |
+|---|---|
+| dplay.c | `DirectPlayEnumerateA` / `DirectPlayCreate` and the IDirectPlay / IDirectPlay3A objects (section 1): game memory in and out, callbacks (dx_call_cb, their data in the calling thread's own frame), the DPSYS_* messages built in Receive's buffer. Nothing else touches game memory. |
+| net_session.c | the provider: one session, its machines (peers) and players, the host's join handling and snapshot, host migration, timeouts, the queue Receive reads, the socket thread (host code only, its own mutex) |
+| net_link.c | one link per pair of machines: the reliable ordered channel and the unreliable one, acks, RTO, keepalive (no sockets, no clock of its own: tools/test_net.c drives it) |
+| net_wire.c | the datagram format and its checked decoders (pure) |
+| net_discovery.c | the session cache EnumSessions reads and its sources (`NdSource`: a query and a datagram handler; "lan" and "direct" today, an announce server later, without touching the DirectPlay layer) |
+| net_sock.c | the only file that knows the socket API: POSIX sockets (macOS, Linux), Winsock (Windows, ws2_32), a no network branch for ROADKILL_XBOX (DirectPlayEnumerateA then lists no provider, as before) until an XNet backend replaces it |
+| net_log.c | `TM2_NET_LOG=1` |
+
+DPIDs are made by the machine that owns the player: `0x1TTTPPII` (12 bits of the session token,
+the owner's peer number, an index), never 0 or -1, so CreatePlayer needs no round trip and the
+owner of any DPID can be checked. A machine announces its own players (NM_PLAYER) to every
+other one; the host gives a joiner the other machines' addresses (NM_PEER), every player with
+its data and the session description, then NM_READY, and Open(DPOPEN_JOIN) returns once that is
+in (EnumPlayers(NULL) is then complete, as DPLAYX's was). Open(JOIN) waits up to 10 s with the
+runtime's host lock given up (w32_block_begin), as Sleep does. No socket is opened until
+EnumSessions or Open (the boot probe creates and releases a DirectPlay object for every
+provider; single player never opens a port).
+
+Host migration: every machine makes the same choice, the lowest remaining peer number (the
+oldest member); it gets DPSYS_DESTROYPLAYERORGROUP for the old host's players, then DPSYS_HOST,
+answers ENUM / JOIN from then on and goes on numbering peers from the highest it has seen.
+
+### Wire format (UDP, little endian)
+
+Header, 24 bytes: `u32 magic "RKNP"`, `u8 version (1)`, `u8 type`, `u8 from peer`, `u8 to peer`,
+`u64 session token`, `u16 seq`, `u16 ack` (every reliable message below it has arrived), `u32 ack
+bits` (bit i: ack + 1 + i has arrived). Datagrams are at most 1200 bytes (no IP fragmentation).
+
+| Type | Token | Payload |
+|---|---|---|
+| 1 ENUM_REQ | 0 | app GUID, compat word, padded to 320 bytes (an answer is never much bigger than the question) |
+| 2 ENUM_RESP | 0 | the session (guidInstance, app GUID, flags, max / current players, dwUser1..4, name, password required) and its players' DPIDs and names |
+| 3 JOIN_REQ | 0 | nonce, app GUID, guidInstance, compat word, password |
+| 4 JOIN_ACCEPT | 0 | nonce, the session token, your peer number, the host's, the next peer number, the session |
+| 5 JOIN_REFUSE | 0 | nonce, the DPERR for Open (DPERR_INVALIDPASSWORD, DPERR_NONEWPLAYERS, DPERR_CANTADDPLAYER, ...) |
+| 16 REL | session | one reliable message: NM_GAME (from, to, the game's bytes: DPSEND_GUARANTEED), NM_PEER, NM_PEER_GONE, NM_PLAYER, NM_PLAYER_GONE, NM_PLAYER_DATA, NM_SESSION, NM_READY |
+| 17 UNREL | session | one NM_GAME sent with flags 0 |
+| 18 ACK, 19 PING, 20 PONG, 21 BYE | session | acks only; keepalive (every second, answered by the socket thread, never by the game); leaving |
+
+Reliable: per link, 32 in flight, the rest queued in order (up to 4096, then the link counts as
+broken); the receiver delivers in order only and keeps up to 32 early ones; RTO = srtt + 4
+rttvar (100 ms .. 2 s, doubled per resend). A machine not heard from for `[net] timeout`
+seconds (default 10) is dropped: DPSYS_DESTROYPLAYERORGROUP for its players. Close lets what is
+in flight arrive (up to 300 ms), then sends BYE three times. SetPlayerData always goes
+reliable.
+
+`compat` is the gameplay settings every machine of a session must share (today
+`[gameplay] fix_crashes`): sessions that differ are not listed, and a join is refused.
+
+### Checks before anything reaches the game
+
+Every datagram: at most 1200 bytes; magic, version and a known type; session-less types carry
+no token or peers, session types all three; then the session token, the destination (us), a
+known peer at the address it joined from. Every payload is decoded exactly (a length that does
+not match, a string with a NUL or longer than the game's 0x80 byte fields, player data over
+0x200 bytes, a game message of 0 or more than 0x400 bytes, a DPID of 0 or -1, trailing bytes:
+refused). Then what the sender may say: only its own players (the DPID's peer byte), only the
+host sends NM_PEER / NM_PEER_GONE / NM_SESSION / NM_READY, a game message goes to all or to one
+of our players, the unreliable channel carries game messages only. Refused datagrams are dropped
+and logged (`roadkill net: refused: ...`, at most 5 lines a second without TM2_NET_LOG). A
+malformed reliable message is not acked; a well formed one that breaks a rule is acked and
+ignored, so a channel never stalls on it. One peer per address: a new JOIN_REQ from a member's
+address replaces that member, so repeated joins cannot fill the session. The DPSYS_* messages
+are built by dplay.c from these checked events, with their pointers into the game's own receive
+buffer; nothing from the wire is used as a pointer, and every message the game reads is under
+its 0x400 bytes (DPSYS_CREATEPLAYERORGROUP at most 0x30 + 0x200 + 2 x 0x80).
+
+Not checked: what is inside the game's own messages and its 0x138 byte player records (the
+game reads them as the 1997 game did: lobby state +0x118 indexes a text table, the 0x102 handler
+copies 0x138 bytes whatever dwDataSize says, src/match/mt2_net.c:245). Every game address the
+runtime follows is masked into the game's 64 MB (rt_ptr), so such data cannot reach host memory,
+but a hostile peer can still disturb the game, as with DirectPlay.
+
+### Settings (roadkill.ini, docs/QOL.md)
+
+| Key | Default | Variable | |
+|---|---|---|---|
+| `[net] port` | 27420 | `TM2_NET_PORT` | the UDP port; when taken the next free one up to +9 (a second instance on the same machine) |
+| `[net] join` | empty | `TM2_NET_JOIN` | `host:port` (or a name) asked directly for its session, besides the LAN |
+| `[net] lan` | 1 | `TM2_NET_LAN` | look for sessions by broadcast on the LAN (to the port and the next 3, and to this machine) while the join screen is open |
+| `[net] timeout` | 10 | `TM2_NET_TIMEOUT` | seconds of silence before a machine is dropped |
+| `[gameplay] net_drop_stale` | 0 | `TM2_NET_DROP_STALE` | 1: a car state packet (type 0x22) older than the last one from that player is dropped; 0: delivered, as DirectPlay did |
+| `[debug] net_log` | 0 | `TM2_NET_LOG` | the provider's log: sessions, peers, players, system messages, guaranteed sends, link statistics every 5 s |
+
+27420 is Roadkill's own default (not DirectPlay's 47624: the protocol is not DirectPlay's).
+
+### Testing
+
+- `./build/test_net` (also `ctest`): the wire decoders on valid, malformed, random and mutated
+  datagrams; two links over a simulated network with 30 % loss, 5 % duplicates and reordering
+  (3000 reliable messages each way arrive once and in order); refused messages come again; acks
+  of unsent sequences, wrong tokens and peers refused; the keepalive timeout.
+- Two instances on one machine, each with its own `TM2_SETTINGS` and `TM2_REGISTRY`, unattended
+  (`TM2_KEEP_ACTIVE=1 SDL_RENDER_DRIVER=software TM2_NOSOUND=1`), driven by `TM2_KEYS` with mouse
+  clicks (`click/X/Y`, src/host/win32_keys.c): host 1100:Right, 1140:Return (Multi Player),
+  1600:click/320/460 (New Game), 2100:click/85/460 (Start), 3900:click/85/460 (Play Game),
+  4500:Return (car); joiner, started 8 s later, 1100:Right, 1140:Return, 1600:click/85/460 (Join
+  Game), 2000:click/60/90 (the session), 2500:click/85/460 (Join), 3000:click/85/460 (Ready),
+  3900:Right, 4000:Return (another car). The registry needs NetProviderName = "Internet TCP/IP
+  Connection For DirectPlay" (or a click on the provider list) for the setup screen's buttons.
+  Seen: the lobby with both players, the car select with both, the match with both cars (about
+  21 car state packets a second each way, RTT 1 ms, no resends on loopback), the joiner killed
+  in a match (the host drops it after 10 s, its car leaves, the host plays on), the host killed
+  in the lobby (the joiner becomes the host), `[net] join = localhost:27500` with `[net] lan = 0`,
+  and 3000 junk / forged datagrams at a hosting instance (all refused, the game unaffected).
+- The MinGW cross build compiles (ws2_32); not run on Windows yet.
+
+### Not done yet
+
+- The announce / rendezvous server and NAT traversal: the mesh works where the machines can
+  reach each other's addresses as the host sees them (a LAN, forwarded ports, NATs that keep
+  a mapping per local port: both sides ping each other at once, which opens most of them). No
+  relay for a pair that cannot connect. IPv4 only.
+- More than two machines, real networks with loss and latency, and a Windows build in play:
+  untested (the transport's loss handling is only tested in tools/test_net.c).
+- A whole match to its end and a next round: the round end stats exchange is not seen yet.
+- Password protected sessions are listed (DPSESSION_PASSWORDREQUIRED set) and Open checks the
+  password; whether DirectX 5 hid them from EnumSessions without a matching password is still
+  open (section 5, risks).
+- The Xbox (XNet) socket backend.
+
+### Game side findings while building it
+
+- pf8_boot.c's `call_n` passes the four registers before the stack words also to the DPLAYX
+  import thunks (src/platform/pf8_boot.c:121, :168): the thunk adapters in src/host/dx_thunks.c
+  forward only the last 2 / 3 words (the old stub never read its arguments, so it did not show).
+- The game saves its strings with lstrlenA as the size (en2_reg_write_string 0x004ac638) and
+  reads them back into unterminated buffers: the registry host now keeps the NUL, so the
+  provider, names and session name come back next time (src/host/win32_reg.c).
+- The lobby's list views are white on black (LVM_SETBKCOLOR 0, LVM_SETTEXTCOLOR 0xffffff); the
+  list view host took 0 for "unset" and drew white on white (src/host/dialogs/controls.c).
+- The setup screen's Join / New Game buttons stay disabled until a provider is selected; its
+  keyboard shortcuts are Alt+J / Alt+N / Alt+C (en2_key_down 0x0049ecf4 tests Alt,
+  src/match/mt2_netui.c:191-193).
+- CreatePlayer's DPNAME is short = the "Driver Alias" (callsign), long = the "Driver Name"
+  (src/engine/en4_io.c:192); the lobby's Player Name column shows the long name.
+- EnumSessions runs on the IDirectPlay3A at the session record's +0 (vtable read from game
+  memory, src/engine/en7_a.c:158) from the game's own thread while the main thread pumps; the
+  session callback copies the name with lstrcpyA (src/engine/en7_g.c:102), so names are kept
+  under 0x80 bytes on the wire.

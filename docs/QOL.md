@@ -38,8 +38,13 @@ through `src/host/settings/settings.h` (`settings_int` / `settings_str` / `setti
 | `[paths] cd_image` | the first .cue next to the data folder | `TM2_CDIMAGE` | the disc image for the music |
 | `[paths] registry` | registry.txt in the user folder | `TM2_REGISTRY` | |
 | `[input] controller` | 1 | `TM2_NOJOY=1` is 0 | see 2 below |
+| `[net] port` | 27420 | `TM2_NET_PORT` | network play's UDP port (the next free one, up to +9, when taken); LAN sessions are looked for on it and the next 3 |
+| `[net] join` | empty | `TM2_NET_JOIN` | `host:port` asked directly for its session (as well as the LAN) |
+| `[net] lan` | 1 | `TM2_NET_LAN` | look for sessions on the LAN (a broadcast while the join screen is open) |
+| `[net] timeout` | 10 | `TM2_NET_TIMEOUT` | seconds without a word from a machine before it leaves the session (the game has no timeout of its own) |
 | `[gameplay] loop_music` | 0 | `TM2_LOOP_MUSIC` | see 3 below |
 | `[gameplay] fix_crashes` | 0 | `TM2_FIX_CRASHES` | see 4 below |
+| `[gameplay] net_drop_stale` | 0 | `TM2_NET_DROP_STALE` | see 5 below |
 | `[debug] ...` | | `TM2_KEYS`, `TM2_SHOT_EVERY`, `TM2_KEEP_ACTIVE`, `TM2_CD_LOG`, ... | written commented out; `src/host/settings/settings.c` lists them all |
 
 ## Status
@@ -50,6 +55,7 @@ through `src/host/settings/settings.h` (`settings_int` / `settings_str` / `setti
 | 2. Controller works by default (`[input] controller`, default **on**) | done |
 | 3. Looping CD music (`[gameplay] loop_music`, default off) | done |
 | 4. Fixes for the original's crash bugs (`[gameplay] fix_crashes`, default off) | done for the ones that can happen, see the list |
+| 5. Late car state packets dropped in network play (`[gameplay] net_drop_stale`, default off) | done |
 | Widescreen, higher internal resolution | the renderer's work; keys defined here |
 | The setup dialogs drawn in game | the dialogs' work |
 
@@ -88,8 +94,7 @@ unlisted_004acb70, movie_set_window 0x004b9c84, ...) read a wrong value but cann
 Roadkill. Divisions by zero the original would fault on are already defined in the ports
 (anim_step_random 0x004a0b08 / anim_step_weighted 0x004a0b7c answer 0), as is cd_command
 0x004b8b40's endless retry (the port retries only while the box answers Retry). The other
-ORIGINAL BUG notes are wrong values, uninitialized stack words or network only paths (no
-DirectPlay yet).
+ORIGINAL BUG notes are wrong values, uninitialized stack words or network only paths.
 
 Guarded by `fix_crashes` (each logs `roadkill: fix_crashes: ...` once when it changes
 something):
@@ -103,4 +108,16 @@ Fixed regardless of the switch (the port's own stubs caused them):
 
 | Where | What happened | Fix |
 |---|---|---|
+| src/host/win32_reg.c, RegSetValueExA | the game saves its strings with lstrlenA as the size (en2_reg_write_string 0x004ac638) and reads them back into unterminated buffers; the registry kept them without the NUL, so the network screens never found their saved provider, names and session name again | REG_SZ values are kept with their NUL |
+| src/host/dialogs/controls.c, list views | a background or text color of 0 (black) was taken as unset: the lobby's player and chat lists (white on black) were drawn white on white, only the selected row readable | the colors the game sets are used, black included |
 | obj_reset_a 0x004a2e60 / obj_reset_b 0x004a3620 bindings, src/rt/bind_engine_widget.c | the "pure virtual function called!" fatal exit on the network (multi player), audio options and input config screens: the original returns with EAX = the object and its callers write the derived vtable through it (static init 0x00477640: `[eax + 0x30] = 0x004e50d8`); the bindings answered 0, so the vtable went to address 0x30 and the background widget kept the base vtable 0x004e58fc, whose slot +0x20 is the pure virtual stub 0x004a6a39 (called from render_set_background 0x004a2ea0). Not DirectPlay, and not in the original | the bindings return the object. The network screen now says it found no network providers (the DirectPlay host enumerates none) and goes back to the title, as the original does without providers. The sighting during a demo did not happen again in about 17 attract demo cycles; most likely the same bug through one of these screens |
+
+### 5. Late car state packets in network play
+
+In a match every machine sends its car's state once a frame without a guarantee (type 0x22,
+DirectPlay Send flags 0, src/match/mt2_world.c); a receiver snaps the car to whatever arrives
+last, so a packet that arrives after a newer one moves the car back (docs/NETWORK.md section 4).
+This is how DirectPlay delivered them and the default. With `net_drop_stale = 1` the provider
+drops a 0x22 packet whose own counter (packet +8) is not newer than the last one delivered from
+that player (src/host/net/net_session.c). Its events (fire, pickups, kill credit) go with it, as
+with a lost packet. Every machine decides for itself; it is not part of the session's checks.

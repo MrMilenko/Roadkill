@@ -100,7 +100,11 @@ What the runtime has shown is missing:
 - **Dialogs and controls** (src/host/dialogs): the system control classes, dialog templates,
   GDI on the controls' pictures, drawn over the game's frame. The audio and input setup screens
   work; the template dialogs (105, 106) are written but not yet seen opened by the game.
-- **Host stubs**: menus, DirectPlay, Direct3D (the game uses its software renderer).
+- **Host stubs**: menus, Direct3D (the game uses its software renderer).
+- **Network play** (src/host/net, docs/NETWORK.md section 6): DirectPlay's IDirectPlay /
+  IDirectPlay3A on Roadkill's own UDP provider; LAN and direct address games between Roadkill
+  instances, from the provider list to the match. TM2_NET_LOG=1 logs it; tools/test_net.c tests
+  the transport.
 - **CD audio** (src/host/snd_mci.c, cd_audio.c, cd_image.c): the MCI "cdaudio" device plays the
   music tracks straight from the player's CD image (TM2_CDIMAGE, default the .cue in TM2_DATA's
   parent folder, e.g. disc/TWISTEDMETAL2.cue; never copied), mixed into the DirectSound output.
@@ -125,7 +129,7 @@ What the runtime has shown is missing:
   thread's PeekMessageA hands the lock to a waiting game thread (w32_yield): the CD monitor runs.
 - **The network screen** (multi player) used to end in a pure virtual call (0x004a6a39): the
   obj_reset_a / obj_reset_b bindings returned 0 where the original leaves EAX = the object, so
-  the background widgets never got their derived vtable (fixed; docs/QOL.md). It now reports no
-  network providers (DirectPlay stubbed) and returns to the title.
+  the background widgets never got their derived vtable (fixed; docs/QOL.md). It now lists the
+  network provider (above).
 - **0x004b4374 ddraw_release_surfaces** reads an EDX the original leaves undefined (after a COM
   call); the port uses 0.
