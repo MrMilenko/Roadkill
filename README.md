@@ -23,6 +23,14 @@ program, an empty `data` folder and a `README.txt`.
 
 ## Play
 
+**The easy way:** `python3 scripts/import_disc.py "Twisted Metal 2.cue" data` (in a release,
+`import_disc.py` sits next to the program and fills its `data` folder by default). It takes a
+`.cue` / `.bin` rip of the CD (the game's files and the music as MP3s, with ffmpeg), an `.iso`, or
+the CD / a folder (the files only), and reads the files straight out of the image: no mounting.
+`README.txt` in each release explains it for Windows, macOS and Linux, and how to rip the CD.
+
+**By hand:**
+
 1. **Copy everything from your Twisted Metal 2 PC CD into the `data` folder next to Roadkill.**
    `TM2.EXE` must end up directly in `data` (with `SINTAB.DAT` and the folders `CARSDB`,
    `LEVELDB`, `MOVIES`, `SHELLDB1` and the rest beside it). Upper or lower case names both work.

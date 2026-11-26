@@ -4,6 +4,11 @@ PUT YOUR TWISTED METAL 2 FILES IN THIS FOLDER
 Roadkill does not include the game. It runs the files from your own
 Twisted Metal 2 PC CD (the 1997 Windows 95 version).
 
+The easy way: import_disc.py (next to Roadkill) fills this folder from
+the CD, a .cue / .bin rip or an .iso in one step. README.txt says how.
+
+By hand:
+
 1. Copy EVERYTHING from the CD into this "data" folder, so that it looks like:
 
        data/

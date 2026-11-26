@@ -18,7 +18,7 @@ cp "$exe" "$dir/"
 cp packaging/DATA_README.txt "$dir/data/PUT_YOUR_GAME_FILES_HERE.txt"
 cp packaging/README.txt "$dir/README.txt"
 cp LICENSE "$dir/LICENSE.txt"
-cp scripts/convert_music.py "$dir/"
+cp scripts/convert_music.py scripts/import_disc.py "$dir/"
 {
     echo "Roadkill $version includes:"
     echo

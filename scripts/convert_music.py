@@ -78,36 +78,30 @@ def read_sectors(files, lba, n):
     return bytes(out)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("cue")
-    ap.add_argument("--out")
-    ap.add_argument("--format", choices=["mp3", "flac"], default="mp3")
-    ap.add_argument("--bitrate", default="192k", help="MP3 bit rate (default 192k)")
-    a = ap.parse_args()
+def convert(cue_path, out, fmt="mp3", bitrate="192k"):
+    """Writes TrackNN.<fmt> and music.cue into out; returns music.cue's path."""
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         sys.exit("convert_music: needs ffmpeg (macOS: brew install ffmpeg; Debian / Ubuntu: apt install ffmpeg; "
                  "Windows: winget install ffmpeg)")
-    files, tracks, end = read_cue(a.cue)
-    out = a.out or os.path.join(os.path.dirname(os.path.abspath(a.cue)), "music")
+    files, tracks, end = read_cue(cue_path)
     os.makedirs(out, exist_ok=True)
     # each track's piece of the disc: from its INDEX 00 (else 01) to the next one's
     starts = [t["idx0"] if t["idx0"] is not None else t["idx1"] for t in tracks]
     starts[0] = 0
-    cue = [f"REM Roadkill music, made by scripts/convert_music.py from {os.path.basename(a.cue)}"]
+    cue = [f"REM Roadkill music, made by scripts/convert_music.py from {os.path.basename(cue_path)}"]
     for i, t in enumerate(tracks):
         lo, hi = starts[i], starts[i + 1] if i + 1 < len(tracks) else end
         kind = "AUDIO" if t["audio"] else "MODE1/2352"
         if t["audio"]:
-            name = "Track%02d.%s" % (t["no"], a.format)
-            codec = ["-c:a", "libmp3lame", "-b:a", a.bitrate] if a.format == "mp3" else ["-c:a", "flac"]
+            name = "Track%02d.%s" % (t["no"], fmt)
+            codec = ["-c:a", "libmp3lame", "-b:a", bitrate] if fmt == "mp3" else ["-c:a", "flac"]
             print(f"track {t['no']:2d}: {(hi - lo) / 75:6.1f} s -> {name}")
             p = subprocess.run([ffmpeg, "-v", "error", "-y", "-f", "s16le", "-ar", "44100", "-ac", "2", "-i", "-",
                                 *codec, os.path.join(out, name)], input=read_sectors(files, lo, hi - lo))
             if p.returncode:
                 sys.exit(f"convert_music: ffmpeg failed on track {t['no']}")
-            cue.append(f'FILE "{name}" {a.format.upper()}')
+            cue.append(f'FILE "{name}" {fmt.upper()}')
         else:
             print(f"track {t['no']:2d}: data ({hi - lo} sectors), kept as silence")
             cue.append('FILE "" NONE')
@@ -116,9 +110,22 @@ def main():
         if t["idx0"] is not None and i > 0:
             cue.append(f"    INDEX 00 {to_msf(t['idx0'] - lo)}")
         cue.append(f"    INDEX 01 {to_msf((t['idx1'] if t['idx1'] is not None else lo) - lo)}")
-    with open(os.path.join(out, "music.cue"), "w", newline="\r\n") as h:
+    path = os.path.join(out, "music.cue")
+    with open(path, "w", newline="\r\n") as h:
         h.write("\n".join(cue) + "\n")
-    print(f"wrote {out}{os.sep}music.cue: put the {os.path.basename(out)} folder in Roadkill's data folder")
+    return path
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("cue")
+    ap.add_argument("--out")
+    ap.add_argument("--format", choices=["mp3", "flac"], default="mp3")
+    ap.add_argument("--bitrate", default="192k", help="MP3 bit rate (default 192k)")
+    a = ap.parse_args()
+    out = a.out or os.path.join(os.path.dirname(os.path.abspath(a.cue)), "music")
+    path = convert(a.cue, out, a.format, a.bitrate)
+    print(f"wrote {path}: put the {os.path.basename(out)} folder in Roadkill's data folder")
 
 
 if __name__ == "__main__":
