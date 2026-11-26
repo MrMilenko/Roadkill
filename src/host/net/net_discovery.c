@@ -84,7 +84,21 @@ void nd_forget(const uint8_t guid[16])
     pthread_mutex_unlock(&mu);
 }
 
+static void offer(const NwSessionInfo* s, const NetAddr* host, const char* source, uint32_t now, int announced,
+                  const NetAddr* pub, const NetAddr* local);
+
 void nd_offer(const NwSessionInfo* s, const NetAddr* host, const char* source, uint32_t now)
+{
+    offer(s, host, source, now, 0, NULL, NULL);
+}
+
+void nd_offer_announced(const NwSessionInfo* s, const NetAddr* pub, const NetAddr* local, const char* source, uint32_t now)
+{
+    offer(s, pub, source, now, 1, pub, local);
+}
+
+static void offer(const NwSessionInfo* s, const NetAddr* host, const char* source, uint32_t now, int announced,
+                  const NetAddr* pub, const NetAddr* local)
 {
     pthread_mutex_lock(&mu);
     int i;
@@ -97,11 +111,21 @@ void nd_offer(const NwSessionInfo* s, const NetAddr* host, const char* source, u
         } else ncache++;
         char a[32];
         net_log("discovery: session \"%s\" at %s (%s)", s->d.name, net_addr_str(host, a, sizeof a), source);
+    } else if (announced && !cache[i].announced) {
+        /* heard of directly (LAN / [net] join) lately: that path wins, the server only says it lives */
+        cache[i].seen = now;
+        pthread_mutex_unlock(&mu);
+        return;
     }
     cache[i].s = *s;
     cache[i].host = *host;
     cache[i].source = source;
     cache[i].seen = now;
+    cache[i].announced = announced;
+    if (announced) {
+        cache[i].pub = *pub;
+        cache[i].local = *local;
+    }
     pthread_mutex_unlock(&mu);
 }
 
@@ -131,6 +155,19 @@ int nd_datagram(const NdIo* io, const NetAddr* from, const NwHdr* h, const uint8
     pthread_mutex_unlock(&mu);
     for (int i = 0; i < n; i++)
         if (src[i].datagram && src[i].datagram(src[i].ctx, io, from, h, payload, len, now)) return 1;
+    return 0;
+}
+
+int nd_raw(const NdIo* io, const NetAddr* from, const uint8_t* pkt, int len, uint32_t now)
+{
+    NdSource src[8];
+    int n;
+    pthread_mutex_lock(&mu);
+    n = nsources;
+    memcpy(src, sources, sizeof src);
+    pthread_mutex_unlock(&mu);
+    for (int i = 0; i < n; i++)
+        if (src[i].raw && src[i].raw(src[i].ctx, io, from, pkt, len, now)) return 1;
     return 0;
 }
 
@@ -215,17 +252,17 @@ void nd_init(void)
     if (done) return;
     done = 1;
     if (settings_bool("net.lan", 1)) {
-        NdSource s = {lan_src.name, udp_query, udp_datagram, &lan_src};
+        NdSource s = {lan_src.name, udp_query, udp_datagram, &lan_src, NULL};
         nd_add_source(&s);
     } else {
         /* the answers to a direct query still need a parser */
-        NdSource s = {lan_src.name, NULL, udp_datagram, &lan_src};
+        NdSource s = {lan_src.name, NULL, udp_datagram, &lan_src, NULL};
         nd_add_source(&s);
     }
     const char* j = settings_str("net.join", "");
     if (j && *j) {
         snprintf(direct_src.target, sizeof direct_src.target, "%s", j);
-        NdSource s = {direct_src.name, udp_query, udp_datagram, &direct_src};
+        NdSource s = {direct_src.name, udp_query, udp_datagram, &direct_src, NULL};
         nd_add_source(&s);
     }
 }

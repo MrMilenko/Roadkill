@@ -65,6 +65,8 @@ static const Key keys[] = {
     {"net.port", "TM2_NET_PORT", ENV_VALUE, "27420", "the UDP port network play listens on (the next free one when it is taken, up to 9 more);\n; LAN games are looked for on this port and the next 3"},
     {"net.join", "TM2_NET_JOIN", ENV_VALUE, "", "a host to look for sessions at directly, host:port (a name or an address; empty: the local network only)"},
     {"net.lan", "TM2_NET_LAN", ENV_VALUE, "1", "1: look for sessions on the local network (a broadcast while the join screen is open)"},
+    {"net.announce", "TM2_NET_ANNOUNCE", ENV_VALUE, "roadkill.horrible.dev:27400", "the announce server internet sessions are listed and introduced through, host:port (empty: none,\n; LAN and [net] join only)"},
+    {"net.public", "TM2_NET_PUBLIC", ENV_VALUE, "1", "1: a session this machine hosts is announced on that server (anyone can see and join it; a\n; password still applies); 0: not announced"},
     {"net.timeout", "TM2_NET_TIMEOUT", ENV_VALUE, "10", "seconds without a word from another machine before it is dropped from the session"},
 
     {"gameplay.loop_music", "TM2_LOOP_MUSIC", ENV_VALUE, "0", "1: a level's CD track starts again at once when it ends (the original's CD monitor restarts it after up to 3 seconds of silence)"},

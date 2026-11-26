@@ -83,6 +83,8 @@ int ns_start(void);
 uint16_t ns_port(void);
 /* the gameplay settings every machine of a session must share (ENUM / JOIN check it) */
 uint32_t ns_compat(void);
+/* the protocol and gameplay signature the announce server lists by (its `build`) */
+uint32_t ns_build(void);
 
 /* host a session (Open with DPOPEN_CREATE): d's guid is made here */
 uint32_t ns_host(NwSessionDesc* d, const char* password);

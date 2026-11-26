@@ -80,7 +80,9 @@ void nw_hdr_write(uint8_t* p, const NwHdr* h)
     w_u32(&w, h->ack_bits);
 }
 
-static int type_known(uint8_t t) { return (t >= NW_ENUM_REQ && t <= NW_JOIN_REFUSE) || (t >= NW_REL && t <= NW_BYE); }
+const uint8_t NW_TM2_APP[16] = {0x40, 0x01, 0x19, 0xea, 0x70, 0xce, 0xcf, 0x11, 0xa1, 0x36, 0x68, 0xc6, 0xff, 0xc0, 0x00, 0x00};
+
+static int type_known(uint8_t t) { return (t >= NW_ENUM_REQ && t <= NW_PUNCH) || (t >= NW_REL && t <= NW_BYE); }
 
 int nw_hdr_read(const uint8_t* p, int len, NwHdr* h)
 {
@@ -97,7 +99,7 @@ int nw_hdr_read(const uint8_t* p, int len, NwHdr* h)
     h->ack_bits = r_u32(&r);
     if (r.err || !type_known(h->type)) return -1;
     /* session-less packets carry no token and no peers; session packets need all three */
-    int sessionless = h->type <= NW_JOIN_REFUSE;
+    int sessionless = h->type <= NW_PUNCH;
     if (sessionless && (h->token || h->from || h->to)) return -1;
     if (!sessionless && (!h->token || !h->from || !h->to || h->from >= 0xff || h->to >= 0xff)) return -1;
     return 0;
@@ -199,6 +201,8 @@ int nw_join_req_write(uint8_t* p, int cap, const NwJoinReq* j)
     w_bytes(&w, j->guid, 16);
     w_u32(&w, j->compat);
     w_str(&w, j->password);
+    w_u32(&w, j->local_ip);
+    w_u16(&w, j->local_port);
     return w_done(&w);
 }
 
@@ -211,7 +215,9 @@ int nw_join_req_read(const uint8_t* p, int len, NwJoinReq* j)
     r_copy(&r, j->guid, 16);
     j->compat = r_u32(&r);
     r_str(&r, j->password);
-    if (!j->nonce) return -1;
+    j->local_ip = r_u32(&r);
+    j->local_port = r_u16(&r);
+    if (!j->nonce || (j->local_ip && !j->local_port) || j->local_ip == 0xffffffffu) return -1;
     return r_end(&r);
 }
 
@@ -281,6 +287,8 @@ int nw_msg_write(uint8_t* p, int cap, const NwMsg* m)
         w_u8(&w, m->peer);
         w_u32(&w, m->ip);
         w_u16(&w, m->port);
+        w_u32(&w, m->lip);
+        w_u16(&w, m->lport);
         break;
     case NM_PEER_GONE:
         w_u8(&w, m->peer);
@@ -332,7 +340,10 @@ int nw_msg_read(const uint8_t* p, int len, NwMsg* m)
         m->peer = r_u8(&r);
         m->ip = r_u32(&r);
         m->port = r_u16(&r);
+        m->lip = r_u32(&r);
+        m->lport = r_u16(&r);
         if (!m->peer || m->peer == 0xff || !m->port || !m->ip || m->ip == 0xffffffffu) return -1;
+        if (m->lip == 0xffffffffu || (m->lip && !m->lport)) return -1;
         break;
     case NM_PEER_GONE:
         m->peer = r_u8(&r);

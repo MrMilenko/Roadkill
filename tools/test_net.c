@@ -10,11 +10,15 @@
  *      reliable message arrives exactly once and in order, both ways
  *   3. a reliable message the receiver refuses is not acked (it comes again), acks for something
  *      never sent are refused, and a silent peer times out
+ *   4. the announce server's datagrams (net_anwire.c): what the host registers comes back as the
+ *      join screen's session exactly; wrong sizes, versions, counts, builds, strings without a
+ *      NUL, player counts and addresses are refused
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "host/net/net_anwire.h"
 #include "host/net/net_link.h"
 #include "host/net/net_wire.h"
 
@@ -46,8 +50,10 @@ static void test_wire(void)
     p[0] ^= 1;
     CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "bad magic refused");
     p[0] ^= 1;
-    p[4] = 2;
+    p[4] = NW_VERSION + 1;
     CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "other protocol version refused");
+    p[4] = NW_VERSION - 1;
+    CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "an older protocol version refused");
     p[4] = NW_VERSION;
     p[5] = 0x55;
     CHECK(nw_hdr_read(p, NW_HDR, &h) != 0, "unknown type refused");
@@ -363,12 +369,120 @@ static void test_links(void)
     while (nnet) free(net[--nnet]);
 }
 
+/* ---- 4. the announce server's datagrams ---- */
+
+static void test_announce(void)
+{
+    const uint32_t build = 0x524b0200u;
+    NwSessionInfo si;
+    memset(&si, 0, sizeof si);
+    for (int i = 0; i < 16; i++) si.d.guid[i] = (uint8_t)(i + 1);
+    strcpy(si.d.name, "Roadkill LAN\x01");
+    si.d.flags = 0x44;
+    si.d.max_players = 8;
+    si.d.cur_players = 2;
+    si.d.user[0] = 7; si.d.user[1] = 10; si.d.user[2] = 3; si.d.user[3] = 0xdeadbeefu;
+    si.d.has_password = 1;
+    si.nplayers = 2;
+    strcpy(si.players[0].lname, "Alice");
+    strcpy(si.players[1].sname, "Grimm");
+    NetAddr local = {0xc0a82805u, 27421};   /* 192.168.40.5 */
+    uint8_t reg[sizeof(AnRegister)];
+    CHECK(na_register_write(reg, sizeof reg, &si, build, &local) == (int)sizeof(AnRegister), "REGISTER size");
+    AnRegister r;
+    memcpy(&r, reg, sizeof r);
+    CHECK(r.h.magic == AN_MAGIC && r.h.type == AN_REGISTER && r.s.build == build && r.s.user[3] == 0xdeadbeefu, "REGISTER fields");
+    const uint8_t* ip = (const uint8_t*)&r.s.local.ip;
+    const uint8_t* pt = (const uint8_t*)&r.s.local.port;
+    CHECK(ip[0] == 192 && ip[1] == 168 && ip[2] == 40 && ip[3] == 5 && pt[0] == (27421 >> 8) && pt[1] == (27421 & 255),
+          "addresses in network order");
+    CHECK(!strcmp(r.s.name, "Roadkill LAN?"), "names sent printable");
+
+    /* the server's answer as it builds it: the registered session plus the public address */
+    AnSessions m;
+    memset(&m, 0, sizeof m);
+    m.h.magic = AN_MAGIC; m.h.version = AN_VERSION; m.h.type = AN_SESSIONS; m.h.arg = 1;
+    m.count = 1;
+    m.s[0] = r.s;
+    uint8_t* pip = (uint8_t*)&m.s[0].public_addr.ip;
+    uint8_t* ppt = (uint8_t*)&m.s[0].public_addr.port;
+    pip[0] = 203; pip[1] = 0; pip[2] = 113; pip[3] = 9; ppt[0] = 0x6b; ppt[1] = 0x1d;
+    NaSession out[AN_PAGE];
+    int n;
+    uint32_t total;
+    CHECK(na_sessions_read((const uint8_t*)&m, sizeof m, build, &total, out, &n) == 0 && n == 1 && total == 1, "SESSIONS read");
+    CHECK(n == 1 && !memcmp(out[0].s.d.guid, si.d.guid, 16) && out[0].s.d.user[0] == 7 && out[0].s.d.user[1] == 10 &&
+          out[0].s.d.user[2] == 3 && out[0].s.d.user[3] == 0xdeadbeefu && out[0].s.d.flags == 0x44 && out[0].s.d.has_password &&
+          out[0].s.d.max_players == 8 && out[0].s.d.cur_players == 2 && !memcmp(out[0].s.d.app, NW_TM2_APP, 16),
+          "the session description exactly (dwUser1..4, flags, players, password)");
+    CHECK(n == 1 && out[0].s.nplayers == 2 && !strcmp(out[0].s.players[0].lname, "Alice") && !strcmp(out[0].s.players[1].sname, "Grimm"),
+          "player names");
+    CHECK(n == 1 && out[0].pub.ip == 0xcb007109u && out[0].pub.port == 0x6b1d && out[0].local.ip == 0xc0a82805u &&
+          out[0].local.port == 27421, "public and local addresses");
+
+    AnSessions bad = m;
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad - 1, build, &total, out, &n) != 0, "short SESSIONS refused");
+    bad.h.version = 2;
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) != 0, "other version refused");
+    bad = m; bad.count = AN_PAGE + 1; bad.h.arg = 100;
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) != 0, "count over a page refused");
+    bad = m; bad.count = 1; bad.h.arg = 0;
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) != 0, "count over the total refused");
+    bad = m; memset(bad.s[0].name, 'x', AN_NAME);
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) == 0 && n == 0, "name without a NUL: left out");
+    bad = m; memset(bad.s[0].players[3], 'y', AN_PLAYER_NAME);
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) == 0 && n == 0, "player name without a NUL: left out");
+    bad = m; bad.s[0].max_players = 200;
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) == 0 && n == 0, "absurd max players: left out");
+    bad = m; bad.s[0].cur_players = 9;
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) == 0 && n == 0, "more players than max: left out");
+    CHECK(na_sessions_read((const uint8_t*)&m, sizeof m, build + 1, &total, out, &n) == 0 && n == 0, "another build: left out");
+    bad = m; memset(&bad.s[0].public_addr, 0, sizeof bad.s[0].public_addr);
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) == 0 && n == 0, "no public address: left out");
+    bad = m; memset(&bad.s[0].public_addr.ip, 0xff, 4);
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) == 0 && n == 0, "broadcast address: left out");
+    bad = m; ((uint8_t*)&bad.s[0].local.ip)[0] = 239;
+    CHECK(na_sessions_read((const uint8_t*)&bad, sizeof bad, build, &total, out, &n) == 0 && n == 1 && out[0].local.ip == 0,
+          "multicast local address dropped, the session kept");
+
+    AnIntro in;
+    memset(&in, 0, sizeof in);
+    in.h.magic = AN_MAGIC; in.h.version = AN_VERSION; in.h.type = AN_INTRO; in.h.arg = 1;
+    memcpy(in.guid, si.d.guid, 16);
+    in.peer_public = m.s[0].public_addr;
+    in.peer_local = r.s.local;
+    uint32_t arg;
+    uint8_t g[16];
+    NetAddr pub, loc;
+    CHECK(na_intro_read((const uint8_t*)&in, sizeof in, &arg, g, &pub, &loc) == 0 && arg == 1 && pub.ip == 0xcb007109u &&
+          loc.port == 27421, "INTRO read");
+    in.h.arg = 2;
+    CHECK(na_intro_read((const uint8_t*)&in, sizeof in, &arg, g, &pub, &loc) != 0, "INTRO arg 2 refused");
+    in.h.arg = 0;
+    CHECK(na_intro_read((const uint8_t*)&in, sizeof in + 1, &arg, g, &pub, &loc) != 0, "long INTRO refused");
+    uint32_t type;
+    CHECK(na_header_read((const uint8_t*)"RKNP", 4, &type, &arg) != 0, "short header refused");
+
+    /* random datagrams never pass as SESSIONS / INTRO with something unusable inside */
+    uint8_t buf[sizeof(AnSessions)];
+    for (int it = 0; it < 20000; it++) {
+        memcpy(buf, &m, sizeof m);
+        for (int k = 0; k < 8; k++) buf[rnd() % sizeof buf] = (uint8_t)rnd();
+        if (na_sessions_read(buf, sizeof buf, build, &total, out, &n) == 0)
+            for (int i = 0; i < n; i++)
+                CHECK(out[i].s.d.max_players <= 8 && out[i].s.d.cur_players <= out[i].s.d.max_players && strlen(out[i].s.d.name) < AN_NAME &&
+                      na_addr_usable(&out[i].pub) && out[i].s.nplayers <= 8, "mutated SESSIONS passed something unusable");
+    }
+}
+
 int main(void)
 {
     printf("test_net: wire format\n");
     test_wire();
     printf("test_net: links\n");
     test_links();
+    printf("test_net: announce server datagrams\n");
+    test_announce();
     printf("test_net: %d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

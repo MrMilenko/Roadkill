@@ -20,6 +20,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "host/net/net_announce.h"
+#include "host/net/net_anwire.h"
 #include "host/net/net_discovery.h"
 #include "host/net/net_link.h"
 #include "host/net/net_log.h"
@@ -27,14 +29,19 @@
 #include "host/settings/settings.h"
 
 #define JOIN_TIMEOUT_MS 10000u
+#define JOIN_TIMEOUT_ANNOUNCED_MS 15000u   /* introduction and punching first */
+#define INTRO_RESEND_MS 1000u
+#define INTRO_WAIT_MS 4000u                /* no INTRO by then: the listed addresses are tried anyway */
+#define PUNCH_EVERY_MS 200u
+#define PUNCH_FOR_MS 5000u
+#define PUNCH_LOCAL_GRACE_MS 300u          /* the public address answered: the LAN one may still win */
+#define PROBE_FOR_MS 5000u                 /* a member with two addresses: both tried this long */
 #define JOIN_RESEND_MS 500u
 #define CLOSE_FLUSH_MS 300u
 #define EV_SOFT_CAP 16384    /* beyond this unreliable game messages are dropped */
 #define EV_HARD_CAP 65536    /* beyond this everything is (the game has not pumped for minutes) */
 
-/* the application GUID the game asks for (0x004e5654): {EA190140-CE70-11CF-A136-68C6FFC00000} */
-static const uint8_t TM2_APP[16] = {0x40, 0x01, 0x19, 0xea, 0x70, 0xce, 0xcf, 0x11,
-                                    0xa1, 0x36, 0x68, 0xc6, 0xff, 0xc0, 0x00, 0x00};
+#define TM2_APP NW_TM2_APP
 
 typedef struct Peer {
     int used;
@@ -42,6 +49,9 @@ typedef struct Peer {
     NetAddr addr;
     NetLink link;
     uint64_t nonce;          /* host side: the JOIN_REQ that made it (a repeated one gets the same answer) */
+    NetAddr local;           /* its own LAN address as it reported it (0: unknown) */
+    int probing;             /* sending to both addr and local until one answers (local wins) */
+    uint32_t probe_until;
     const char* dead;        /* removal pending (done in tick, never inside the link's own callbacks) */
 } Peer;
 
@@ -78,6 +88,14 @@ static struct {
     NetAddr join_addr;
     uint32_t join_hr;
     NwJoinReq join_req;
+    int an_join;             /* joining a session heard of from the announce server */
+    int intro, chosen;       /* INTRO in; an address picked for the JOIN_REQ */
+    NetAddr cand_pub, cand_local;
+    int ans_pub, ans_local;
+    uint32_t ans_at;
+
+    /* host: punching toward joiners the announce server introduced */
+    struct { NetAddr a; uint32_t until, last; } punch[8];
 
     NsEvent* qhead, *qtail;
     int qn;
@@ -98,6 +116,7 @@ static void link_out(void* user, const uint8_t* pkt, int len)
 {
     Peer* p = user;
     raw_send(&p->addr, pkt, len);
+    if (p->probing && p->local.ip && !net_addr_eq(&p->local, &p->addr)) raw_send(&p->local, pkt, len);
 }
 
 static NetLinkOut out_of(Peer* p) { NetLinkOut o = {link_out, p}; return o; }
@@ -268,6 +287,9 @@ static void reset_session(void)
     S.password[0] = 0;
     S.join_nonce = 0;
     S.join_hr = 0;
+    S.an_join = S.intro = S.chosen = 0;
+    S.ans_pub = S.ans_local = 0;
+    memset(S.punch, 0, sizeof S.punch);
 }
 
 /* a peer is gone (BYE, timeout, the host said so): its players go, maybe the host role moves */
@@ -382,7 +404,16 @@ static void handle(void* user, int reliable, const uint8_t* payload, int len)
         /* a member on the host's own machine: reach it at the host's address */
         if (net_addr_is_loopback(&a) && !net_addr_is_loopback(&from->addr)) a.ip = from->addr.ip;
         if (m.peer >= S.next_peer) S.next_peer = (uint8_t)(m.peer + 1);
-        if (!peer_add(m.peer, &a, c->now)) net_log("peer table full: peer %u ignored", m.peer);
+        Peer* np = peer_add(m.peer, &a, c->now);
+        if (!np) { net_log("peer table full: peer %u ignored", m.peer); return; }
+        NetAddr l = {m.lip, m.lport};
+        if (m.lip && na_addr_usable(&l) && !net_addr_eq(&l, &a)) {
+            /* both its addresses until one answers: the LAN one when both do (two players behind
+             * one router), else the public one the host knows (through their NATs) */
+            np->local = l;
+            np->probing = 1;
+            np->probe_until = c->now + PROBE_FOR_MS;
+        }
         return;
     }
     case NM_PEER_GONE: {
@@ -553,6 +584,8 @@ static void on_join_req(const NetAddr* from, const uint8_t* payload, int len, ui
     if (!p) { refuse(from, j.nonce, DPERR_CANTADDPLAYER); return; }
     S.next_peer++;
     p->nonce = j.nonce;
+    p->local.ip = j.local_ip;
+    p->local.port = j.local_port;
     fprintf(stderr, "roadkill net: %s joins the session (peer %u)\n", net_addr_str(from, a, sizeof a), p->no);
     send_accept(p);
     /* the joiner's snapshot: the other members, every player, the session; then READY */
@@ -565,6 +598,8 @@ static void on_join_req(const NetAddr* from, const uint8_t* payload, int len, ui
         m.peer = q->no;
         m.ip = q->addr.ip;
         m.port = q->addr.port;
+        m.lip = q->local.ip;
+        m.lport = q->local.port;
         send_rel(p, &m, now);
         /* and the new one to the others */
         NwMsg n2;
@@ -573,6 +608,8 @@ static void on_join_req(const NetAddr* from, const uint8_t* payload, int len, ui
         n2.peer = p->no;
         n2.ip = p->addr.ip;
         n2.port = p->addr.port;
+        n2.lip = p->local.ip;
+        n2.lport = p->local.port;
         send_rel(q, &n2, now);
     }
     for (int i = 0; i < NW_MAX_PLAYERS; i++) {
@@ -638,11 +675,75 @@ static void on_join_answer(const NetAddr* from, const NwHdr* h, const uint8_t* p
 
 /* ---- the socket thread ---- */
 
+/* ---- reaching each other through NATs (announced sessions) ---- */
+
+static void send_punch(const NetAddr* to, uint32_t kind)
+{
+    uint8_t b[4];
+    nw_u32_write(b, 4, kind);
+    sessionless(to, NW_PUNCH, b, 4);
+}
+
+/* PUNCH: a host answers an ask (that is what tells a joiner which address works); a joiner
+ * notes which of the host's addresses answered. Anything else is ignored: punches exist to open
+ * NAT mappings, so most arrive where nobody waits for them. */
+static void on_punch(const NetAddr* from, const uint8_t* payload, int len, uint32_t now)
+{
+    uint32_t kind;
+    char a[32];
+    if (nw_u32_read(payload, len, &kind) != 0 || kind > 1) {
+        net_drop("PUNCH from %s: malformed", net_addr_str(from, a, sizeof a));
+        return;
+    }
+    if (kind == 0) {
+        if (S.state == ST_IN && S.is_host) send_punch(from, 1);
+        return;
+    }
+    if (S.state != ST_JOINING || !S.an_join || !S.intro || S.chosen) return;
+    int was = S.ans_pub || S.ans_local;
+    if (S.cand_local.ip && net_addr_eq(from, &S.cand_local)) S.ans_local = 1;
+    else if (net_addr_eq(from, &S.cand_pub)) S.ans_pub = 1;
+    else return;
+    if (!was) S.ans_at = now;
+    net_log("punch answered from %s", net_addr_str(from, a, sizeof a));
+    pthread_cond_broadcast(&S.cv);
+}
+
+/* INTRO from the announce server (socket thread, S.mu held) */
+static void on_intro(uint32_t arg, const uint8_t guid[16], const NetAddr* pub, const NetAddr* local, uint32_t now)
+{
+    char a[32], b[32];
+    if (arg == 0) {
+        /* to the host: a joiner is coming; punch toward both its addresses for a while */
+        if (S.state != ST_IN || !S.is_host || memcmp(guid, S.desc.guid, 16) != 0) return;
+        net_log("introduced to a joiner at %s / %s", net_addr_str(pub, a, sizeof a), net_addr_str(local, b, sizeof b));
+        const NetAddr* t[2] = {pub, local};
+        for (int k = 0; k < 2; k++) {
+            if (!t[k]->ip) continue;
+            int slot = 0;
+            for (int i = 0; i < 8; i++) if (tdiff(S.punch[i].until, S.punch[slot].until) < 0) slot = i;
+            S.punch[slot].a = *t[k];
+            S.punch[slot].until = now + PUNCH_FOR_MS;
+            S.punch[slot].last = now - PUNCH_EVERY_MS;
+        }
+        return;
+    }
+    if (S.state != ST_JOINING || !S.an_join || memcmp(guid, S.join_req.guid, 16) != 0) return;
+    S.cand_pub = *pub;
+    S.cand_local = *local;
+    if (!S.intro) net_log("introduced to the host at %s / %s", net_addr_str(pub, a, sizeof a), net_addr_str(local, b, sizeof b));
+    S.intro = 1;
+    pthread_cond_broadcast(&S.cv);
+}
+
 static void on_datagram(const NetAddr* from, const uint8_t* pkt, int len, uint32_t now)
 {
     NwHdr h;
     char a[32];
     if (len > NW_MAX_PACKET || nw_hdr_read(pkt, len, &h) != 0) {
+        /* the announce server's protocol (only from its address; checked there) */
+        NdIo io = {io_send, NULL, S.port, TM2_APP, ns_compat()};
+        if (len <= NW_MAX_PACKET && nd_raw(&io, from, pkt, len, now)) return;
         net_drop("datagram from %s: not ours or malformed (%d bytes)", net_addr_str(from, a, sizeof a), len);
         return;
     }
@@ -651,6 +752,7 @@ static void on_datagram(const NetAddr* from, const uint8_t* pkt, int len, uint32
     switch (h.type) {
     case NW_ENUM_REQ: on_enum_req(from, payload, plen); return;
     case NW_JOIN_REQ: on_join_req(from, payload, plen, now); return;
+    case NW_PUNCH: on_punch(from, payload, plen, now); return;
     case NW_JOIN_ACCEPT:
     case NW_JOIN_REFUSE: on_join_answer(from, &h, payload, plen, now); return;
     case NW_ENUM_RESP: {
@@ -669,13 +771,24 @@ static void on_datagram(const NetAddr* from, const uint8_t* pkt, int len, uint32
         net_log("datagram from %s: unknown peer %u", net_addr_str(from, a, sizeof a), h.from);
         return;
     }
-    if (!net_addr_eq(from, &p->addr)) {
+    int via_local = p->probing && p->local.ip && net_addr_eq(from, &p->local);
+    if (!net_addr_eq(from, &p->addr) && !via_local) {
         net_drop("datagram for peer %u from %s: not its address", h.from, net_addr_str(from, a, sizeof a));
         return;
     }
     Ctx c = {p, now};
     NetLinkOut o = out_of(p);
     int r = nl_on_packet(&p->link, &h, payload, plen, now, &o, check, handle, &c);
+    if (r >= 0 && p->probing) {
+        if (via_local) {
+            /* its LAN address answers: that one from now on */
+            net_log("peer %u answers at its LAN address %s", p->no, net_addr_str(from, a, sizeof a));
+            p->addr = p->local;
+            p->probing = 0;
+        } else if (tdiff(p->probe_until, now + PUNCH_LOCAL_GRACE_MS) > 0) {
+            p->probe_until = now + PUNCH_LOCAL_GRACE_MS;   /* the public one answers: a little longer for the LAN one */
+        }
+    }
     if (r < 0) net_log("peer %u: packet type %u refused", p->no, h.type);
     else if (r == 1 && !p->dead) p->dead = "it left";
 }
@@ -683,6 +796,19 @@ static void on_datagram(const NetAddr* from, const uint8_t* pkt, int len, uint32
 static void tick(uint32_t now)
 {
     if (S.state != ST_IN) return;
+    if (S.is_host) {
+        NwSessionInfo si;
+        fill_info(&si);
+        NdIo io = {io_send, NULL, S.port, TM2_APP, ns_compat()};
+        na_host_tick(&io, &si, now);
+        for (int i = 0; i < 8; i++)
+            if (S.punch[i].a.ip && tdiff(S.punch[i].until, now) > 0 && tdiff(now, S.punch[i].last) >= (int)PUNCH_EVERY_MS) {
+                send_punch(&S.punch[i].a, 0);
+                S.punch[i].last = now;
+            }
+    }
+    for (int i = 0; i < NW_MAX_PEERS; i++)
+        if (S.peers[i].used && S.peers[i].probing && tdiff(now, S.peers[i].probe_until) > 0) S.peers[i].probing = 0;
     static uint32_t stats_at;
     if (net_log_on() && tdiff(now, stats_at) >= 5000) {
         stats_at = now;
@@ -737,11 +863,14 @@ int ns_available(void) { return net_sock_init() == 0; }
 
 uint32_t ns_compat(void)
 {
-    /* gameplay settings that change the simulation: machines that differ would desync */
+    /* gameplay settings every machine of a session shares: a bit each */
     static uint32_t c = 0xffffffffu;
-    if (c == 0xffffffffu) c = settings_bool("gameplay.fix_crashes", 0) ? 1u : 0u;
+    if (c == 0xffffffffu)
+        c = (settings_bool("gameplay.fix_crashes", 0) ? 1u : 0u) | (settings_bool("gameplay.net_drop_stale", 0) ? 2u : 0u);
     return c;
 }
+
+uint32_t ns_build(void) { return 0x524b0000u | (uint32_t)NW_VERSION << 8 | (ns_compat() & 0xffu); }
 
 int ns_start(void)
 {
@@ -759,6 +888,8 @@ int ns_start(void)
             S.start_failed = 1;
         } else {
             nd_init();
+            na_init(ns_build());
+            na_set_intro(on_intro);
             if (pthread_create(&S.thr, NULL, thread_main, NULL) != 0) {
                 net_sock_close(S.sock);
                 S.sock = NULL;
@@ -835,20 +966,65 @@ uint32_t ns_join(const uint8_t guid[16], const char* password, NwSessionDesc* ou
     memcpy(S.join_req.guid, guid, 16);
     S.join_req.compat = ns_compat();
     snprintf(S.join_req.password, sizeof S.join_req.password, "%s", password ? password : "");
+    NetAddr mine;
+    if (na_local_addr(S.port, &mine) == 0) {
+        S.join_req.local_ip = mine.ip;
+        S.join_req.local_port = mine.port;
+    }
+    NdIo io = {io_send, NULL, S.port, TM2_APP, ns_compat()};
     char a[32];
-    fprintf(stderr, "roadkill net: joining \"%s\" at %s\n", e.s.d.name, net_addr_str(&e.host, a, sizeof a));
-    uint32_t start = net_now_ms(), last = start - JOIN_RESEND_MS;
+    if (e.announced) {
+        /* through the announce server: an introduction, then punches to the host's public and
+         * LAN addresses; the JOIN_REQ goes where an answer came from (the LAN one first) */
+        S.an_join = 1;
+        S.cand_pub = e.pub;
+        S.cand_local = e.local;
+        fprintf(stderr, "roadkill net: joining \"%s\" through the announce server\n", e.s.d.name);
+    } else {
+        S.chosen = 1;
+        fprintf(stderr, "roadkill net: joining \"%s\" at %s\n", e.s.d.name, net_addr_str(&e.host, a, sizeof a));
+    }
+    uint32_t start = net_now_ms(), last = start - JOIN_RESEND_MS, last_intro = start - INTRO_RESEND_MS;
+    uint32_t last_punch = start - PUNCH_EVERY_MS, punch_start = 0;
     uint32_t hr = DPERR_TIMEOUT;
     for (;;) {
         uint32_t now = net_now_ms();
         if (S.join_hr) { hr = S.join_hr; break; }
         if (S.state == ST_IN && S.ready) { hr = DP_OK; break; }
-        if (tdiff(now, start) > (int)JOIN_TIMEOUT_MS) break;
-        if (S.state == ST_JOINING && tdiff(now, last) >= (int)JOIN_RESEND_MS) {
+        if (tdiff(now, start) > (int)(S.an_join ? JOIN_TIMEOUT_ANNOUNCED_MS : JOIN_TIMEOUT_MS)) break;
+        if (S.state == ST_JOINING && !S.chosen) {
+            if (!S.intro && tdiff(now, last_intro) >= (int)INTRO_RESEND_MS) {
+                na_join(&io, guid);
+                last_intro = now;
+            }
+            if (!S.intro && tdiff(now, start) > (int)INTRO_WAIT_MS) {
+                net_log("no introduction from the announce server: trying the listed addresses");
+                S.intro = 1;
+            }
+            if (S.intro) {
+                if (!punch_start) punch_start = now;
+                if (tdiff(now, last_punch) >= (int)PUNCH_EVERY_MS) {
+                    send_punch(&S.cand_pub, 0);
+                    if (S.cand_local.ip) send_punch(&S.cand_local, 0);
+                    last_punch = now;
+                }
+                const NetAddr* pick = NULL;
+                if (S.ans_local) pick = &S.cand_local;
+                else if (S.ans_pub && tdiff(now, S.ans_at) >= (int)PUNCH_LOCAL_GRACE_MS) pick = &S.cand_pub;
+                else if (tdiff(now, punch_start) > (int)PUNCH_FOR_MS) pick = &S.cand_pub;   /* no answer: try anyway */
+                if (pick) {
+                    S.join_addr = *pick;
+                    S.chosen = 1;
+                    fprintf(stderr, "roadkill net: joining at %s (%s)\n", net_addr_str(pick, a, sizeof a),
+                            pick == &S.cand_local ? "its LAN address" : S.ans_pub ? "its public address" : "no punch answered");
+                }
+            }
+        }
+        if (S.state == ST_JOINING && S.chosen && tdiff(now, last) >= (int)JOIN_RESEND_MS) {
             send_join_req();
             last = now;
         }
-        wait_ms(50);
+        wait_ms(S.chosen ? 50 : 20);
     }
     if (hr == DP_OK) {
         if (out) *out = S.desc;
@@ -886,6 +1062,11 @@ void ns_close(void)
                     NetLinkOut o = out_of(&S.peers[i]);
                     nl_send_bye(&S.peers[i].link, &o);
                 }
+        if (S.is_host) {
+            /* after the flush (its waits let the socket thread register again) */
+            NdIo io = {io_send, NULL, S.port, TM2_APP, ns_compat()};
+            na_withdraw(&io);
+        }
         fprintf(stderr, "roadkill net: left the session\n");
     }
     reset_session();

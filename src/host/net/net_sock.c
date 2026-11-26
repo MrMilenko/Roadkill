@@ -23,6 +23,7 @@ int net_sock_send(NetSock* s, const NetAddr* to, const void* p, int len) { (void
 int net_sock_recv(NetSock* s, NetAddr* from, void* p, int cap, int timeout_ms)
 { (void)s; (void)from; (void)p; (void)cap; (void)timeout_ms; return -1; }
 int net_addr_resolve(const char* text, uint16_t defport, NetAddr* out) { (void)text; (void)defport; (void)out; return -1; }
+int net_sock_local_ip(const NetAddr* toward, uint32_t* ip) { (void)toward; (void)ip; return -1; }
 uint32_t net_now_ms(void) { return (uint32_t)(clock() * 1000.0 / CLOCKS_PER_SEC); }
 void net_random(void* p, size_t n) { for (size_t i = 0; i < n; i++) ((uint8_t*)p)[i] = (uint8_t)rand(); }
 
@@ -186,6 +187,27 @@ int net_addr_resolve(const char* text, uint16_t defport, NetAddr* out)
     out->port = port;
     freeaddrinfo(res);
     return 0;
+}
+
+int net_sock_local_ip(const NetAddr* toward, uint32_t* ip)
+{
+    if (net_sock_init() != 0) return -1;
+    sock_t fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (fd == BAD_SOCK) return -1;
+    NetAddr t = *toward;
+    if (!t.ip || t.ip == NET_ADDR_BROADCAST) { t.ip = 0xc0000201u; t.port = 9; }   /* 192.0.2.1: any routed address */
+    struct sockaddr_in sa;
+    to_sa(&t, &sa);
+    int r = -1;
+    if (connect(fd, (struct sockaddr*)&sa, sizeof sa) == 0) {
+        socklen_t sl = sizeof sa;
+        if (getsockname(fd, (struct sockaddr*)&sa, &sl) == 0 && sa.sin_addr.s_addr) {
+            *ip = ntohl(sa.sin_addr.s_addr);
+            r = 0;
+        }
+    }
+    close_sock(fd);
+    return r;
 }
 
 uint32_t net_now_ms(void)

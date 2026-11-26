@@ -6,8 +6,9 @@
  *     while the join screen is open, to the default port and the next few (a second Roadkill on
  *     the same machine takes the next free port); hosts answer with an ENUM_RESP.
  *   - "direct": the same request to [net] join = host:port.
- *   - later an announce / rendezvous server: a source with its own query and datagram handler,
- *     registered with nd_add_source; the DirectPlay layer only ever reads the cache.
+ *   - "announce": Roadkill's announce / rendezvous server ([net] announce, net_announce.c): a
+ *     source with its own query and datagram handler, registered with nd_add_source; the
+ *     DirectPlay layer only ever reads the cache.
  *
  * EnumSessions answers from the cache at once (it never waits, never fails). An entry not heard
  * of for ND_EXPIRE_MS is dropped. All functions lock the cache's own mutex; sources run on the
@@ -29,9 +30,12 @@
 
 typedef struct NdEntry {
     NwSessionInfo s;
-    NetAddr host;            /* where to send the JOIN_REQ */
+    NetAddr host;            /* where to send the JOIN_REQ (announced: the public address) */
     const char* source;
     uint32_t seen;
+    int announced;           /* only heard of through the announce server: a join asks it for an
+                              * introduction first and picks the address that answers */
+    NetAddr pub, local;      /* announced: the host's public and LAN addresses */
 } NdEntry;
 
 /* what a source may use: the provider's socket */
@@ -51,6 +55,9 @@ typedef struct NdSource {
     int (*datagram)(void* ctx, const NdIo* io, const NetAddr* from, const NwHdr* h, const uint8_t* payload, int len,
                     uint32_t now);
     void* ctx;
+    /* a datagram that is not Roadkill's provider protocol (another protocol, e.g. the announce
+     * server's): 1 when the source took it */
+    int (*raw)(void* ctx, const NdIo* io, const NetAddr* from, const uint8_t* pkt, int len, uint32_t now);
 } NdSource;
 
 void nd_init(void);                      /* registers lan / direct from the settings */
@@ -70,7 +77,13 @@ void nd_tick(const NdIo* io, uint32_t now);
 /* the socket thread: a session-less datagram (ENUM_RESP, or something for a source) */
 int nd_datagram(const NdIo* io, const NetAddr* from, const NwHdr* h, const uint8_t* payload, int len, uint32_t now);
 
+/* the socket thread: a datagram that is not the provider's protocol */
+int nd_raw(const NdIo* io, const NetAddr* from, const uint8_t* pkt, int len, uint32_t now);
+
 /* a source reports a session it heard of */
 void nd_offer(const NwSessionInfo* s, const NetAddr* host, const char* source, uint32_t now);
+/* the announce server reports one: kept as announced unless a direct source heard of it lately
+ * (then the LAN path is used and this only keeps it fresh) */
+void nd_offer_announced(const NwSessionInfo* s, const NetAddr* pub, const NetAddr* local, const char* source, uint32_t now);
 
 #endif

@@ -71,8 +71,9 @@ target_include_directories(test_movie PRIVATE src)
 target_link_libraries(test_movie PRIVATE indeo)
 
 # tools/test_net: the network transport and its packet checks on their own (reliable delivery
-# under loss, malformed packets refused); `ctest` or ./build/test_net
-add_executable(test_net tools/test_net.c src/host/net/net_wire.c src/host/net/net_link.c)
+# under loss, malformed packets refused, the announce server's datagrams checked); `ctest` or
+# ./build/test_net
+add_executable(test_net tools/test_net.c src/host/net/net_wire.c src/host/net/net_link.c src/host/net/net_anwire.c)
 target_include_directories(test_net PRIVATE src)
 target_compile_options(test_net PRIVATE ${ROADKILL_WARNINGS})
 enable_testing()

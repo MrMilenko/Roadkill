@@ -39,6 +39,9 @@ int net_sock_recv(NetSock* s, NetAddr* from, void* p, int cap, int timeout_ms);
 /* "host", "host:port", "1.2.3.4:port" (port defaults to defport); 0 resolved, -1 not. May block
  * on a name lookup: call it from the provider's own thread. */
 int net_addr_resolve(const char* text, uint16_t defport, NetAddr* out);
+/* this machine's own address on the interface that leads toward `toward` (its LAN address):
+ * a connected UDP socket's local name, nothing is sent. 0 found. */
+int net_sock_local_ip(const NetAddr* toward, uint32_t* ip);
 int net_addr_eq(const NetAddr* a, const NetAddr* b);
 int net_addr_is_loopback(const NetAddr* a);
 /* "1.2.3.4:5" into out */

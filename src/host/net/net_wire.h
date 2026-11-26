@@ -24,7 +24,7 @@
 #include <stdint.h>
 
 #define NW_MAGIC       0x504e4b52u   /* "RKNP" */
-#define NW_VERSION     1
+#define NW_VERSION     2             /* 2: PUNCH, local addresses in JOIN_REQ / NM_PEER */
 #define NW_HDR         24
 #define NW_MAX_PACKET  1200          /* no IP fragmentation on any common path */
 #define NW_MAX_GAME    0x400         /* the game's receive buffer (src/match/mt_net.c) */
@@ -43,6 +43,7 @@ enum {
     NW_JOIN_REQ = 3,     /* NwJoinReq */
     NW_JOIN_ACCEPT = 4,  /* NwJoinAccept */
     NW_JOIN_REFUSE = 5,  /* nonce, HRESULT */
+    NW_PUNCH = 6,        /* u32 0 = asks, 1 = answers: opens NAT mappings before a join (no state) */
     /* in a session (token, from, to checked) */
     NW_REL = 16,         /* one reliable message (NwMsg) */
     NW_UNREL = 17,       /* one game message (NwMsg kind NM_GAME) */
@@ -55,7 +56,8 @@ enum {
 /* reliable messages (first payload byte) */
 enum {
     NM_GAME = 1,         /* u32 from DPID, u32 to DPID (0 all), u16 n, n bytes */
-    NM_PEER = 2,         /* host -> members: u8 peer, u32 ip, u16 port (a member to link to) */
+    NM_PEER = 2,         /* host -> members: u8 peer, u32 ip, u16 port (as the host sees it),
+                          * u32 ip, u16 port (its own LAN address, 0 when unknown) */
     NM_PEER_GONE = 3,    /* host -> members: u8 peer left / timed out */
     NM_PLAYER = 4,       /* u32 id, u8 owner, u32 flags, name, name, u16 n, data */
     NM_PLAYER_GONE = 5,  /* u32 id */
@@ -98,6 +100,8 @@ typedef struct NwJoinReq {
     uint8_t app[16], guid[16];
     uint32_t compat;
     char password[NW_MAX_NAME + 1];
+    uint32_t local_ip;       /* the joiner's own LAN address (0: unknown) */
+    uint16_t local_port;
 } NwJoinReq;
 
 typedef struct NwJoinAccept {
@@ -111,8 +115,8 @@ typedef struct NwMsg {
     uint8_t kind;
     uint32_t from, to, id, flags;       /* NM_GAME from / to; NM_PLAYER* id, flags */
     uint8_t peer, owner;                /* NM_PEER* peer; NM_PLAYER owner */
-    uint32_t ip;
-    uint16_t port;
+    uint32_t ip, lip;                   /* NM_PEER: as the host sees it, its own LAN address */
+    uint16_t port, lport;
     uint16_t n;                         /* data bytes */
     const uint8_t* data;                /* into the decoded packet */
     char sname[NW_MAX_NAME + 1], lname[NW_MAX_NAME + 1];
@@ -137,6 +141,9 @@ int nw_join_refuse_write(uint8_t* p, int cap, uint64_t nonce, uint32_t hr);
 int nw_join_refuse_read(const uint8_t* p, int len, uint64_t* nonce, uint32_t* hr);
 int nw_msg_write(uint8_t* p, int cap, const NwMsg* m);
 int nw_msg_read(const uint8_t* p, int len, NwMsg* m);
+/* the application GUID TM2.EXE asks for (0x004e5654): {EA190140-CE70-11CF-A136-68C6FFC00000} */
+extern const uint8_t NW_TM2_APP[16];
+
 int nw_u32_write(uint8_t* p, int cap, uint32_t v);
 int nw_u32_read(const uint8_t* p, int len, uint32_t* v);
 
