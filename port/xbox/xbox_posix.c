@@ -160,3 +160,10 @@ int clock_gettime(int clock, struct timespec* t)
     t->tv_nsec = (long)((c.QuadPart % freq.QuadPart) * 1000000000 / freq.QuadPart);
     return 0;
 }
+
+int nanosleep(const struct timespec* t, struct timespec* left)
+{
+    (void)left;
+    Sleep((DWORD)(t->tv_sec * 1000 + (t->tv_nsec + 999999) / 1000000));
+    return 0;
+}
