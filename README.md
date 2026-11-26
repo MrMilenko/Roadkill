@@ -65,6 +65,7 @@ the Windows registry) go to `registry.txt` next to it. Environment variables ove
 | `[display] fullscreen`, `scale` | `TM2_FULLSCREEN=1`, `TM2_SCALE=<n>` | full screen; window scale (default 2) |
 | `[audio] sound`, `*_volume` | `TM2_NOSOUND=1`, `TM2_VOLUME=<0..100>` | no sound; volumes |
 | `[input] controller` | `TM2_NOJOY=1` | controllers (default on) |
+| `[player] name`, `alias`, `[net] session_name` | `TM2_PLAYER_NAME`, `TM2_PLAYER_ALIAS`, `TM2_NET_SESSION_NAME` | your names in network games (empty: what you typed in the game) |
 | `[net] port`, `join`, `lan` | `TM2_NET_PORT=<port>`, `TM2_NET_JOIN=<host:port>` | network play: UDP port (default 27420), a host to ask directly, LAN search (default on) |
 | `[net] announce`, `public` | `TM2_NET_ANNOUNCE=<host:port>`, `TM2_NET_PUBLIC=0` | internet play: the announce server (default `roadkill.horrible.dev:27400`, empty: none); announce the games you host (default on) |
 | `[gameplay] loop_music`, `fix_crashes`, `net_drop_stale` | `TM2_LOOP_MUSIC=1`, `TM2_FIX_CRASHES=1`, ... | changes to the original, off by default |

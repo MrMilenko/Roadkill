@@ -79,10 +79,24 @@ resolution, fullscreen, volumes, looping music, fixes for the original's
 own bugs: all switches in that file, off until you turn them on.
 The game's own saved settings go to registry.txt in the same folder.
 
-NOT YET
--------
-Network play (Multi Player) is not there yet: the menu goes back to the
-title screen.
+NETWORK PLAY
+------------
+Multi Player works between Roadkill players on Windows, macOS, Linux and
+the original Xbox, over the internet or your home network: the game's own
+1997 lobby, chat, car select and matches, up to 8 players.
+
+  Host:  Multi Player > Internet TCP/IP > New Game. Your game is listed on
+         roadkill.horrible.dev (set [net] public = 0 in roadkill.ini to keep
+         it off the list) and on your home network.
+  Join:  Multi Player > Internet TCP/IP > Join: pick a game from the list.
+         Or set [net] join = <address>:27420 in roadkill.ini to ask a host
+         directly.
+
+Roadkill uses UDP port 27420 (the next free one up to 27429). Most home
+routers let players reach each other without any setup; if a friend can't
+join you, forward UDP 27420 to your computer. Your names can be set in
+roadkill.ini too: [player] name / alias, [net] session_name.
+No computer opponents in network games (as in the original).
 
 LICENSE
 -------
