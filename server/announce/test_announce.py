@@ -28,7 +28,7 @@ def session(guid, name, players, local=("10.0.0.5", 27420)):
 def sock():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(1.0)
-    s.bind(("127.0.0.1", 0))
+    s.bind(("0.0.0.0", 0))
     return s
 
 
@@ -51,6 +51,7 @@ guid = bytes(range(16))
 host.sendto(hdr(REGISTER) + session(guid, "Milenko's game", ["Milenko"]), (HOST, PORT))
 r = recv(host)
 check(r and struct.unpack_from("<IIII", r)[2] == REGISTERED and len(r) == 16 + 8, "register answered with the public address")
+host_public = struct.unpack_from("<IH", r, 16) if r else None
 
 client.sendto(hdr(LIST, 0) + struct.pack("<I", BUILD), (HOST, PORT))
 r = recv(client)
@@ -67,8 +68,7 @@ rh, rc = recv(host), recv(client)
 check(rh and struct.unpack_from("<I", rh, 8)[0] == INTRO and rc and struct.unpack_from("<I", rc, 8)[0] == INTRO,
       "join introduces both sides")
 if rc:
-    ip, port = struct.unpack_from("<IH", rc, 32)
-    check(socket.inet_ntoa(struct.pack("<I", ip)) == "127.0.0.1" and socket.ntohs(port) == host.getsockname()[1],
+    check(struct.unpack_from("<IH", rc, 32) == host_public,
           "the client gets the host's address as the server saw it")
 
 other.sendto(hdr(REGISTER) + session(guid, "hijack", ["x"]), (HOST, PORT))
