@@ -5,8 +5,8 @@
  *
  * Files: the game's paths (drive letter, '\') are mapped under the data root, TM2_DATA (default
  * disc/files): "D:\GRY\X.TPC" and "GRY\x.tpc" both open <root>/GRY/X.TPC, matched case
- * insensitively per component. The disc shows up as drive TM2_CD (default D:, DRIVE_CDROM);
- * C: is a fixed drive, other letters have no root.
+ * insensitively per component ('-' and '_' as one when nothing else matches). The disc shows
+ * up as drive TM2_CD (default D:, DRIVE_CDROM); C: is a fixed drive, other letters have no root.
  *
  * Threads: CreateThread runs the game's thread procedure (stdcall, one word at a[0]) on a pthread via
  * rt_call. All game code runs holding the host lock (main takes it at start up); a thread gives
@@ -95,6 +95,18 @@ char w32_cd_letter(void)
     return (char)toupper((unsigned char)*settings_str("debug.cd_letter", "D"));
 }
 
+/* case insensitive, '-' == '_' */
+static int name_eq_dash(const char* a, const char* b)
+{
+    for (;; a++, b++) {
+        int x = tolower((unsigned char)*a), y = tolower((unsigned char)*b);
+        if (x == '-') x = '_';
+        if (y == '-') y = '_';
+        if (x != y) return 0;
+        if (!x) return 1;
+    }
+}
+
 const char* w32_host_path(const char* game, char* out, size_t cap)
 {
     const char* g = game;
@@ -116,6 +128,14 @@ const char* w32_host_path(const char* game, char* out, size_t cap)
         struct dirent* de = NULL;
         if (d) {
             while ((de = readdir(d)) != NULL) if (!strcasecmp(de->d_name, comp)) { use = de->d_name; break; }
+            /* not there: '-' and '_' taken as the same. The game names its arena pictures
+             * SHELLDB3\SC-LA.PCX, SS-LA.PCX ...; the disc has SC_LA.PCX (ISO 9660 has no '-'),
+             * so the original never finds them. Only a lookup that fails otherwise changes. */
+            if (!de && strpbrk(comp, "-_")) {
+                closedir(d);   /* read again from the start (the Xbox port has no rewinddir) */
+                if ((d = opendir(out)) != NULL)
+                    while ((de = readdir(d)) != NULL) if (name_eq_dash(de->d_name, comp)) { use = de->d_name; break; }
+            }
         }
         if (len + 1 + strlen(use) < cap) {
             out[len++] = '/';
