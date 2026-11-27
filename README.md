@@ -21,8 +21,9 @@ Builds for Windows (64-bit), Linux (x86-64) and macOS (Apple Silicon and Intel) 
 builds them ([Actions](https://github.com/MrMilenko/Roadkill/actions)). Each zip holds the
 program, an empty `data` folder and a `README.txt`.
 
-The original Xbox: test builds at [roadkill-xbox](https://github.com/MrMilenko/roadkill-xbox/releases)
-(the source is `port/xbox` here).
+The original Xbox: a test build is on the same [Releases page](https://github.com/MrMilenko/Roadkill/releases)
+(`Roadkill-<version>-xbox-test.zip`; its install steps are in the release notes and the zip's
+`README.txt`; the source is `port/xbox`).
 
 ## Play
 
