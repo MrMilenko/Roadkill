@@ -5,6 +5,7 @@
  */
 #include "rt_env.h"
 #include "match/mt2_ui_net.h"
+#include "qol_arenas.h"
 
 /* A call whose arguments may be host pointers (uintptr_t interfaces). A host pointer into the
  * game address space becomes its game address. A host pointer to the port's own locals (its
@@ -77,7 +78,15 @@ static uint32_t b_host_run(const uint32_t* a, int n) { NOARG; return mt2_ui_net_
 static uint32_t b_join_run(const uint32_t* a, int n) { NOARG; return mt2_ui_net_join_run(env()); }
 /* 0x00469a8c (item in EAX) */
 static uint32_t b_join_select(const uint32_t* a, int n) { mt2_ui_net_join_select(env(), R(0)); return 0; }
-V(host_build)
+/* + [gameplay] hidden_arenas (qol_arenas.h) */
+static uint32_t b_host_build(const uint32_t* a, int n)
+{
+    NOARG;
+    qola_host_build(1);
+    mt2_ui_net_host_build(env());
+    qola_host_build(0);
+    return 0;
+}
 V(host_destroy)
 V(host_start)
 V(join_restore_cancel)

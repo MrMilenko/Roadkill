@@ -76,6 +76,7 @@ static const Key keys[] = {
     {"gameplay.fix_crashes", "TM2_FIX_CRASHES", ENV_VALUE, "0", "1: guard the original's own crash / hang bugs (docs/QOL.md lists them); 0: as the original"},
     {"gameplay.unlock_hidden_cars", "TM2_UNLOCK_HIDDEN_CARS", ENV_VALUE, "0", "1: Sweet Tooth and Minion can be picked on the car select without their cheat codes (0: as the original, type ICECREAM / BIGBOY there)"},
     {"gameplay.play_dark_tooth", "TM2_PLAY_DARK_TOOTH", ENV_VALUE, "0", "1: Dark Tooth on his own car select slot after Minion, shrunk to a car's size; where he has no art or ending of his own he uses Sweet Tooth's (docs/QOL.md). Network machines must agree. 0: as the original, Dark Tooth is only the boss"},
+    {"gameplay.hidden_arenas", "TM2_HIDDEN_ARENAS", ENV_VALUE, "0", "1: the network host screen's arena arrows also reach the hidden arenas (Florida : Suicide Swamp,\n; Los Angeles : Cyburbia, the Twisted Metal 1 rooftop) without the debug codes (0: as the original, DASBAK and\n; JMSWAMP / TMBURBS / TMROOF typed in a network session)"},
     {"gameplay.net_drop_stale", "TM2_NET_DROP_STALE", ENV_VALUE, "0", "1: network play drops another car's state packet that arrives after a newer one (0: as DirectPlay, late packets snap the car back)"},
 
     {"debug.keep_active", "TM2_KEEP_ACTIVE", ENV_PRESENT, "0", "1: the game never sees the window deactivate (the original pauses)"},

@@ -5,6 +5,7 @@
  *   crash_fixes.c  [gameplay] fix_crashes      music_loop.c  [gameplay] loop_music
  *   controller.c   [input] controller          volume.c      [audio] *_volume
  *   hidden_cars.c  [gameplay] unlock_hidden_cars, play_dark_tooth
+ *   hidden_arenas.c [gameplay] hidden_arenas
  */
 #ifndef TM2_HOST_QOL_QOL_H
 #define TM2_HOST_QOL_QOL_H
@@ -24,6 +25,10 @@ int qol_unlock_hidden_cars(void);
 /* [gameplay] play_dark_tooth (default 0): Dark Tooth (car 14) on his own car select slot, drawn
  * and sized as a car (src/rt/qol_cars.c); part of the network compatibility word */
 int qol_play_dark_tooth(void);
+/* [gameplay] hidden_arenas (default 0): the network host screen's arena arrows also reach
+ * Suicide Swamp, Cyburbia and the TM1 rooftop as if their debug codes had been typed
+ * (src/rt/qol_arenas.c) */
+int qol_hidden_arenas(void);
 
 /* [input] controller (default 1) and a game controller connected: the game's saved
  * InputJoystickStatus reads as on (host/win32_reg.c) */

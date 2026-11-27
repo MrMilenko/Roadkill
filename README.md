@@ -70,6 +70,7 @@ the Windows registry) go to `registry.txt` next to it. Environment variables ove
 | `[net] announce`, `public` | `TM2_NET_ANNOUNCE=<host:port>`, `TM2_NET_PUBLIC=0` | internet play: the announce server (default `roadkill.horrible.dev:27400`, empty: none); announce the games you host (default on) |
 | `[gameplay] loop_music`, `fix_crashes`, `net_drop_stale` | `TM2_LOOP_MUSIC=1`, `TM2_FIX_CRASHES=1`, ... | changes to the original, off by default |
 | `[gameplay] unlock_hidden_cars`, `play_dark_tooth` | `TM2_UNLOCK_HIDDEN_CARS=1`, `TM2_PLAY_DARK_TOOTH=1` | Sweet Tooth and Minion without the cheat codes; Dark Tooth (car sized) on his own car select slot. Off by default |
+| `[gameplay] hidden_arenas` | `TM2_HIDDEN_ARENAS=1` | the hidden arenas (Suicide Swamp, Cyburbia, Roof Tops) on the network host screen without the debug codes. Off by default |
 
 `docs/QOL.md` describes every switch.
 

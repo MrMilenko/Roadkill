@@ -7,6 +7,7 @@
  */
 #include "rt_env.h"
 #include "combat/cb_level.h"
+#include "qol_arenas.h"
 
 static WMem g_mem;
 
@@ -100,7 +101,12 @@ V_EII(b_ent_show, cb_level_entity_show, int32_t, int32_t)
 V_EII(b_ent_hide, cb_level_entity_hide, int32_t, int32_t)
 R_E(b_tgt_field, cb_target_object_field)
 R_E(b_tgt, cb_target_object)
-R_EI(b_counter_take, cb_pickup_counter_take, uint32_t)
+/* + [gameplay] hidden_arenas (qol_arenas.h) */
+static uint32_t b_counter_take(const uint32_t* a, int n)
+{
+    uint32_t i = A0;
+    return qola_counter(i, (uint32_t)cb_pickup_counter_take(env(), i));
+}
 /* 0x0044ef60(block, id) */
 static uint32_t b_combo_init(const uint32_t* a, int n) { cb_combo_block_init(rt_ptr(A0), A1); return 0; }
 V_E(b_fx_clear, cb_fx_counter_clear)

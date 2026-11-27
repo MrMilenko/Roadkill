@@ -49,6 +49,7 @@ through `src/host/settings/settings.h` (`settings_int` / `settings_str` / `setti
 | `[gameplay] net_drop_stale` | 0 | `TM2_NET_DROP_STALE` | see 5 below |
 | `[gameplay] unlock_hidden_cars` | 0 | `TM2_UNLOCK_HIDDEN_CARS` | see 6 below |
 | `[gameplay] play_dark_tooth` | 0 | `TM2_PLAY_DARK_TOOTH` | see 7 below |
+| `[gameplay] hidden_arenas` | 0 | `TM2_HIDDEN_ARENAS` | see 8 below |
 | `[debug] ...` | | `TM2_KEYS`, `TM2_SHOT_EVERY`, `TM2_KEEP_ACTIVE`, `TM2_CD_LOG`, ... | written commented out; `src/host/settings/settings.c` lists them all |
 
 ## Status
@@ -62,6 +63,7 @@ through `src/host/settings/settings.h` (`settings_int` / `settings_str` / `setti
 | 5. Late car state packets dropped in network play (`[gameplay] net_drop_stale`, default off) | done |
 | 6. Sweet Tooth and Minion without the cheat codes (`[gameplay] unlock_hidden_cars`, default off) | done |
 | 7. Dark Tooth as the player's car (`[gameplay] play_dark_tooth`, default off) | done: his own slot on the car select, one player and network games |
+| 8. The hidden arenas without the debug codes (`[gameplay] hidden_arenas`, default off) | done: network games (the original offers them nowhere else) |
 | Widescreen, higher internal resolution | the renderer's work; keys defined here |
 | The setup dialogs drawn in game | the dialogs' work |
 
@@ -199,3 +201,57 @@ Seen: the wheel with his slot and model, Sweet Tooth still on the wheel; a tourn
 from Los Angeles to Moscow; a save at the Dark Tooth stage through the stage's end, the ending and
 the credits; a network game, host as Dark Tooth, the joiner seeing and targeting him. Not tried:
 his special weapon, two player split screen.
+
+### 8. The hidden arenas without the debug codes
+
+TM2.EXE has three arenas its menus do not list: level 10, "Florida : Suicide Swamp" (a Jet Moto
+crossover: TERRAIN\SWAMP.RMP / .GRP / .PTS, LEVELDB\SWAMP.DPC / .TPC), level 11, "Los Angeles :
+Cyburbia" and level 12, "Los Angeles : Roof Tops" (CYB and SROOF, Twisted Metal 1's suburb and
+rooftop). arenaSetup 0x004576a8 has their fog and loaders (src/combat/cb2_arena_setup.c); level 9
+is the Dark Tooth stage (DEN).
+
+The original offers them only on the network host screen ("Session Setup"), and only after debug
+codes. Its arena arrows (0x004685d4 / 0x00468650, src/match/mt_shell.c) step 1..12, skip 9, and
+take 10 / 11 / 12 only when pickupCounterTake 0x0044eee4(0x23 / 0x24 / 0x25) is non zero; the
+screen's build (0x00467904, src/match/mt2_ui_net.c) also wants 0x1f before it keeps a remembered
+arena above 9. Those are entries of the cheat table 0x004ffedc (4 bytes each) that the cheat
+handler 0x0044e1cc (src/platform/pf8_cheats.c; key sequences at TM2.EXE 0x004e6a84) sets:
+
+| Code | Entry | Global | What it does |
+|---|---|---|---|
+| DASBAK (31) | 0x1f | 0x004fff58 | debug mode on, only while 0x004632b0 says a DirectPlay session object exists (the network screens onwards); typed again: off |
+| SLEUTH (32) | 0x20 | 0x004fff5c | spectator camera: two input actions (0x47 / 0x48) step the view through the other cars (src/game/car_input.c, `spectate`); with GLORIOUS or debug mode |
+| HIDING (33) | 0x21 | 0x004fff60 | toggled (debug mode); no reader found |
+| BLOWOUT (34) | 0x22 | 0x004fff64 | sets or clears 0x23, 0x24 and 0x25 together (debug mode); 0x22 itself always reads 0 |
+| JMSWAMP (35) | 0x23 | 0x004fff68 | level 10, Suicide Swamp, on the host screen (debug mode) |
+| TMBURBS (36) | 0x24 | 0x004fff6c | level 11, Cyburbia (debug mode) |
+| TMROOF (37) | 0x25 | 0x004fff70 | level 12, Roof Tops (debug mode) |
+| DEREK5 (38) | 0x26 | 0x004fff74 | toggled (debug mode); no reader found |
+
+(33 and 35..37 also need 0x004e6be4, which is 1 in the retail game.) The level select's secret
+level path (result 4: level = button + 10, "secret level selected") is wired to 0x23..0x25 only
+for network game types 5..7 (bytes 0x004e805c; 0x004e8060 = 0xff 0xff 0xff otherwise), and no
+screen of the network flow opens the level select; the one player level select's wheel
+(SHELLDB1\LEVELSEL, switch node 9001) has 8 arenas. So in the original the route is: Multi
+Player, host a game, type DASBAK then JMSWAMP (TMBURBS, TMROOF) on the Session Setup screen, and
+the arrows reach the arena. Joining machines need no code: the arena travels in the session
+record.
+
+The pictures the screen shows are SHELLDB3\SC-<arena>.PCX; the disc has SC_<arena>.PCX (ISO 9660
+names have no '-'), so the original never shows any of them. Roadkill's file lookup takes '-' and
+'_' as one when the exact name is missing (src/host/win32_kernel.c), and its InvalidateRect sends
+the main window the WM_PAINT that puts the picture on the screen (src/host/win32_user.c); both
+always on, as they only change what failed.
+
+With `hidden_arenas = 1` (src/rt/qol_arenas.c, called from src/rt/bind_combat_level.c and
+src/rt/bind_match_mt2_ui_net.c) pickupCounterTake answers 1 for 0x23..0x25, and for 0x1f inside
+the host screen's build, without writing the table: the arrows reach the three arenas with no
+code typed, the codes still toggle what they toggle, and debug mode is not on for anything else.
+Single player has no way to pick them in the original and the switch adds none. Network games
+need nothing more: only the host picks the arena, so the switch is not part of the compatibility
+word.
+
+Seen: with the codes typed (switch off) and with the switch on, the host screen steps Hong Kong
+-> Suicide Swamp -> Cyburbia -> Roof Tops -> Los Angeles; two machine endurance games in Suicide
+Swamp (codes typed), Cyburbia and Roof Tops (switch on the host only), both cars driving. Not
+tried: challenge / tournament game types there, a whole match to its end.
