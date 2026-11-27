@@ -539,7 +539,20 @@ static uint32_t u_ShowWindow(const uint32_t* a, int n)
     return was;
 }
 static uint32_t u_UpdateWindow(const uint32_t* a, int n) { return win(W(0)) != NULL; }
-static uint32_t u_InvalidateRect(const uint32_t* a, int n) { w32dlg_invalidate(W(0)); return 1; }
+/* InvalidateRect(hwnd, rect, erase): a control repaints its picture; the main window (or NULL,
+ * every window) gets a WM_PAINT as on Windows, one at a time: the game's paint handler
+ * (0x004ac9c4) shows its back surface (the network host screen's arena picture is blitted there
+ * and shown this way). */
+static uint32_t u_InvalidateRect(const uint32_t* a, int n)
+{
+    w32dlg_invalidate(W(0));
+    if (main_hwnd && (W(0) == 0 || W(0) == main_hwnd)) {
+        int queued = 0;
+        for (int k = 0; k < nq; k++) if (q[k].hwnd == main_hwnd && q[k].msg == 0x0f) queued = 1;
+        if (!queued) post(1, main_hwnd, 0x0f, 0, 0);
+    }
+    return 1;
+}
 
 static uint32_t u_GetWindowLongA(const uint32_t* a, int n)
 {
