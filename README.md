@@ -21,6 +21,9 @@ Builds for Windows (64-bit), Linux (x86-64) and macOS (Apple Silicon and Intel) 
 builds them ([Actions](https://github.com/MrMilenko/Roadkill/actions)). Each zip holds the
 program, an empty `data` folder and a `README.txt`.
 
+The original Xbox: test builds at [roadkill-xbox](https://github.com/MrMilenko/roadkill-xbox/releases)
+(the source is `port/xbox` here).
+
 ## Play
 
 **The easy way:** `python3 scripts/import_disc.py "Twisted Metal 2.cue" data` (in a release,
