@@ -14,7 +14,8 @@
  * GetTextMetricsA / GetTextExtentPoint32A answer the same metrics the drawing uses.
  *
  * Not done: pens and lines (none imported), clipping regions, ROPs other than copies, palettes
- * (8 bit DIBs carry their own colours), text on DirectDraw surface DCs (drawn nowhere, as before).
+ * (8 bit DIBs carry their own colours). DirectDraw surface DCs are DCs on a picture that
+ * dx_ddraw.c copies onto the surface at ReleaseDC.
  */
 #include "host/dialogs/dialogs.h"
 #include "host/win32_host.h"

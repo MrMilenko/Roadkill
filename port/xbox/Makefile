@@ -29,7 +29,11 @@ SRCS += $(SDL2X_SRC_LIST)
 
 # Roadkill's code: cdecl as on the desktop (OXDK's default is stdcall, for the XDK's samples),
 # C99, the Xbox pieces first on the include path.
+# float math in SSE (the Pentium III has it), as every desktop build does it: on the x87 the game's
+# floats keep extra precision, and the AI drove out of the arenas (doubles stay on the x87, held
+# to 53 bits by xbox_main.c)
 RK_FLAGS = -std=gnu99 -Xclang -fdefault-calling-conv=cdecl -ffp-contract=off -fno-omit-frame-pointer \
+           -msse -mfpmath=sse \
            -DROADKILL_XBOX=1 -DROADKILL_NO_TLS=1 \
            -I$(CURDIR)/compat -I$(ROADKILL)/src -I$(ROADKILL)/src/rt -I$(ROADKILL)/third_party/indeo -I$(ROADKILL)/third_party/dr_libs \
            -include $(CURDIR)/compat/rk_xbox.h \

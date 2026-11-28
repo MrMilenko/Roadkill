@@ -21,9 +21,10 @@
  *   GetSystemMetrics(SM_CXSCREEN / SM_CYSCREEN) may answer the current mode size.
  *
  * GDI on surfaces
- *   IDirectDrawSurface::GetDC hands out a fake HDC (a fake area address). A GDI host that wants
- *   to draw text into a surface (TextOutA / ExtTextOutA on that HDC) asks dx_sdl_hdc_surface()
- *   for the surface's game memory: 16 bit pixels, pitch in bytes, 565 or 555 (dx_sdl_is_565()).
+ *   IDirectDrawSurface::GetDC hands out a GDI DC (host/dialogs/gdi.c) on a see through picture the
+ *   surface's size; ReleaseDC copies what was drawn onto the surface (565 or 555). The game's in
+ *   match menu (Esc: MID-GAME OPTIONS, quit) is TextOutA on the back buffer this way.
+ *   dx_sdl_hdc_surface() finds a surface's game memory by that HDC.
  *   GetDeviceCaps(hdc, BITSPIXEL) should answer 16.
  *
  * Full screen

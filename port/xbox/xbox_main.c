@@ -5,6 +5,7 @@
  */
 #include <xtl.h>
 #include <stdarg.h>
+#include <float.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -207,6 +208,8 @@ LONG rk_crash_report(EXCEPTION_POINTERS* e)
 void __cdecl main(void)
 {
     static char* argv[] = {"D:\\default.xbe", NULL};
+    /* doubles on the x87 rounded to 53 bits, as on Windows (floats are in SSE: the Makefile) */
+    _controlfp(_PC_53, _MCW_PC);
     freopen("D:\\roadkill.log", "w", stderr);
     setvbuf(stderr, NULL, _IONBF, 0);   /* every line reaches the file, even when the console crashes */
     rk_log("starting");

@@ -56,6 +56,10 @@ static uint32_t b_t23fc_commit_xbox(const uint32_t* a, int n)
         [0x2c] = 6, [0x2d] = 5,         /* next / previous weapon: Black / White */
         [0x4a] = 13, [0x4c] = 14,       /* radar / enemy list: d-pad up / down */
         [0x3c] = 15, [0x3d] = 16,       /* previous / next VR mode: d-pad left / right */
+        /* the special moves' direction taps (car_combo_update): the 1997 game reads them from
+         * the arrow keys only (no joystick default), so a pad had none; here quick flicks of the
+         * left stick, as the PS1 does them on its steering d-pad */
+        [0x51] = 0x24, [0x52] = 0x23, [0x53] = 0x22, [0x54] = 0x21,   /* up / down / left / right */
     };
     memcpy(rt_ptr(0x00a8247cu), pad, sizeof pad);
     return b_t23fc_commit(a, n);

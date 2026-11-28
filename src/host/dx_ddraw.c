@@ -34,6 +34,7 @@
 #include "platform/pf2_env.h"
 #include "qol/display.h"
 #include "host/settings/settings.h"
+#include "host/dialogs/dialogs.h"
 
 #define DDERR_ALREADYINITIALIZED 0x88760005u
 #define DDERR_NOCLIPPERATTACHED  0x887600cdu
@@ -81,7 +82,8 @@ typedef struct Surf {
     int nback;
     DxObj* chain_front;          /* a back buffer's primary */
     DxObj* clipper;
-    uint32_t hdc;                /* fake HDC from GetDC, 0 until asked */
+    uint32_t hdc;                /* GetDC's HDC: a GDI DC on dc_pic (host/dialogs/gdi.c), 0 until asked */
+    DlgPic dc_pic;               /* what GDI draws between GetDC and ReleaseDC, alpha 0 = untouched */
     uint8_t* dc_copy;            /* display.internal_scale: the pixels at GetDC (host/qol/display.h) */
     int has_ck;
     uint32_t ck_lo, ck_hi;
@@ -439,7 +441,19 @@ static uint32_t s_getdc(const uint32_t* a, int n)   /* 0x44 GetDC(HDC*) */
     Surf* s = surf_of(dx_arg(a, n, 0));
     uint32_t out = dx_arg(a, n, 1);
     if (!s || !out) return DX_E_INVALIDARG;
-    if (!s->hdc) s->hdc = rt_fake_alloc(16);
+    /* GDI draws into a see through picture, copied onto the surface at ReleaseDC (the game's
+     * in match menu, 0x004b31d0, is TextOutA on the back buffer's DC) */
+    if (!s->dc_pic.px || s->dc_pic.w != s->w || s->dc_pic.h != s->h) {
+        free(s->dc_pic.px);
+        s->dc_pic.w = s->w;
+        s->dc_pic.h = s->h;
+        s->dc_pic.px = calloc((size_t)s->w * (size_t)s->h, 4);
+        if (s->hdc) gdi_dc_free(s->hdc);
+        s->hdc = s->dc_pic.px ? gdi_dc_for(&s->dc_pic, 0, 0) : 0;
+        if (!s->hdc) return DX_E_INVALIDARG;
+    } else {
+        memset(s->dc_pic.px, 0, (size_t)s->w * (size_t)s->h * 4);
+    }
     rt_w32(out, s->hdc);
     if (qol_display_scale() > 1 && !s->primary) {
         /* display.internal_scale: what GDI writes until ReleaseDC is found by comparing */
@@ -453,6 +467,23 @@ static uint32_t s_getdc(const uint32_t* a, int n)   /* 0x44 GetDC(HDC*) */
 static uint32_t s_releasedc(const uint32_t* a, int n)   /* 0x68 ReleaseDC(hdc) */
 {
     Surf* s = surf_of(dx_arg(a, n, 0));
+    if (s && s->dc_pic.px && s->dc_pic.w == s->w && s->dc_pic.h == s->h) {
+        const int is565 = dx_sdl_is_565();
+        uint8_t* base = rt_ptr(s->px);
+        for (int y = 0; y < s->h; y++) {
+            const uint32_t* src = s->dc_pic.px + (size_t)y * (size_t)s->w;
+            uint8_t* row = base + (size_t)y * (size_t)s->pitch;
+            for (int x = 0; x < s->w; x++) {
+                uint32_t c = src[x];
+                if (!(c >> 24)) continue;
+                uint32_t r = c >> 16 & 0xff, g = c >> 8 & 0xff, b = c & 0xff;
+                uint16_t v = is565 ? (uint16_t)((r >> 3) << 11 | (g >> 2) << 5 | b >> 3)
+                                   : (uint16_t)((r >> 3) << 10 | (g >> 3) << 5 | b >> 3);
+                row[2 * x] = (uint8_t)v;
+                row[2 * x + 1] = (uint8_t)(v >> 8);
+            }
+        }
+    }
     if (s && s->dc_copy && qol_display_scale() > 1) {
         const uint8_t* now = rt_ptr(s->px);
         int x0 = s->w, y0 = s->h, x1 = -1, y1 = -1;
